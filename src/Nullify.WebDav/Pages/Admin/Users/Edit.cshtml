@@ -1,0 +1,102 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Users.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add user" : Model.Username;
+}
+<div class="page-head">
+    <div>
+        <h1>@(Model.IsNew ? "Add user" : Model.Username)</h1>
+        <p><a asp-page="Index">← Users</a></p>
+    </div>
+</div>
+<partial name="_ValidationSummary" />
+
+<div class="card">
+    <form method="post" class="stack">
+        <div class="row">
+            <div class="field">
+                <label asp-for="Username">Username</label>
+                <input asp-for="Username" readonly="@(!Model.IsNew)" autocomplete="off" />
+                <span class="hint">Used in folder templates as <code>{user}</code>. Letters, digits, <code>. _ - @@</code>.</span>
+            </div>
+            <div class="field">
+                <label asp-for="DisplayName">Display name</label>
+                <input asp-for="DisplayName" />
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Provider">Signs in with</label>
+                <select asp-for="Provider">
+                    @foreach (var p in Model.Providers)
+                    {
+                        <option value="@p">@(p == UserConfig.LocalProvider ? "Local password" : p)</option>
+                    }
+                </select>
+                <span class="hint">Local passwords are stored as PBKDF2 hashes; other providers verify the password themselves.</span>
+            </div>
+            <div class="field">
+                <label asp-for="Login">Login at provider</label>
+                <input asp-for="Login" placeholder="same as username" autocomplete="off" />
+                <span class="hint">E.g. <code>CONTOSO\asmith</code> or <code>asmith@@contoso.com</code>. Either name can be used to sign in.</span>
+            </div>
+        </div>
+        <div class="field">
+            <label asp-for="NewPassword">@(Model.IsNew ? "Password" : "Set new password")</label>
+            <input asp-for="NewPassword" type="password" autocomplete="new-password" />
+            <span class="hint">Local accounts only. @(Model.IsNew ? "" : "Leave empty to keep the current password.")</span>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Groups">Groups</label>
+                <input asp-for="Groups" placeholder="e.g. staff, finance" />
+                <span class="hint">Comma separated. Operating system groups from Windows or PAM are added at sign-in.</span>
+            </div>
+            <div class="field">
+                <label asp-for="DefaultMount">Default mount</label>
+                <select asp-for="DefaultMount">
+                    <option value="">(server default)</option>
+                    @foreach (var m in Model.MountNames)
+                    {
+                        <option value="@m">@m</option>
+                    }
+                </select>
+                <span class="hint">Served at <code>/dav/~/</code> for this user.</span>
+            </div>
+        </div>
+        <div class="checks">
+            <label class="check"><input asp-for="Enabled" /> Enabled</label>
+            <label class="check"><input asp-for="IsAdmin" /> Administrator</label>
+        </div>
+        <div><button class="primary" type="submit">@(Model.IsNew ? "Create user" : "Save")</button></div>
+    </form>
+</div>
+
+@if (Model.Existing != null)
+{
+    <div class="card">
+        <h2>Effective access</h2>
+        @if (Model.Effective.Count == 0)
+        {
+            <p class="empty">No mount rule matches this user (based on the groups configured here).</p>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>Mount</th><th>Access</th><th>Folder</th></tr></thead>
+                <tbody>
+                @foreach (var e in Model.Effective)
+                {
+                    <tr><td><b>@e.Mount</b></td><td>@e.Access</td><td class="small"><code>@e.Path</code> <span class="muted">on @e.Storage</span></td></tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <div class="card">
+        <h2>Delete user</h2>
+        <p class="muted">Removes the account from the configuration. Files are not deleted.</p>
+        <form method="post" asp-page-handler="Delete"><button class="danger" type="submit">Delete @Model.Existing.Username</button></form>
+    </div>
+}

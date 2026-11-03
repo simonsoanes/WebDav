@@ -1,0 +1,51 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Providers.IndexModel
+@{
+    ViewData["Title"] = "Authentication";
+}
+<div class="page-head">
+    <div>
+        <h1>Authentication</h1>
+        <p>Verify passwords against the operating system or a directory instead of storing them here.</p>
+    </div>
+    <a class="btn primary" asp-page="Edit">Add provider</a>
+</div>
+
+<div class="card">
+    @if (Model.Providers.Count == 0)
+    {
+        <p class="empty">No providers: only local passwords are used.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Checks against</th><th>Users</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var (p, supported, users) in Model.Providers)
+            {
+                <tr>
+                    <td><a asp-page="Edit" asp-route-name="@p.Name"><b>@p.Name</b></a>
+                        @if (!p.Enabled) { <span class="badge">disabled</span> }
+                        @if (!supported) { <span class="badge warn">not supported here</span> }
+                        @if (p.AcceptUnlisted) { <span class="badge accent">accepts unlisted users</span> }
+                        @if (!string.IsNullOrEmpty(p.Description)) { <div class="muted small">@p.Description</div> }</td>
+                    <td>@p.Type</td>
+                    <td class="small">@Nullify.WebDav.Pages.Admin.Providers.IndexModel.Summary(p)</td>
+                    <td>@users</td>
+                    <td class="actions"><a class="btn small" asp-page="Edit" asp-route-name="@p.Name">Edit</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
+    <h2>Provider types</h2>
+    <dl class="kv small">
+        <dt>Windows</dt><dd>Local and domain accounts via <code>LogonUser</code>. Supplies Windows group memberships and enables per-user impersonation for storage. Windows only.</dd>
+        <dt>Pam</dt><dd>Linux accounts through PAM, with Unix groups. The service must be allowed to verify passwords (root, or the <code>shadow</code> group with pam_unix).</dd>
+        <dt>Ldap</dt><dd>LDAP simple bind over LDAPS or StartTLS: Active Directory, Samba AD, OpenLDAP, FreeIPA.</dd>
+        <dt>Imap</dt><dd>Logs in to an IMAP server, e.g. the mail server that already owns the accounts.</dd>
+    </dl>
+</div>

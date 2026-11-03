@@ -1,0 +1,11 @@
+bin/
+obj/
+# Runtime data (configuration, key ring, default file storage) when running from the source tree.
+src/Nullify.WebDav/data/
+.vs/
+.vscode/
+.idea/
+*.user
+TestResults/
+publish/
+.env

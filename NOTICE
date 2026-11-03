@@ -1,0 +1,12 @@
+Nullify.WebDav
+Copyright 2026 Simon Soanes
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It depends on the following third-party components, which are distributed under their own licenses:
+
+- ASP.NET Core and .NET (Microsoft, MIT License)
+- Microsoft.Extensions.Hosting.WindowsServices and Microsoft.Extensions.Hosting.Systemd (Microsoft, MIT License)
+- Microsoft.AspNetCore.Mvc.Testing and MSTest (Microsoft, MIT License; tests only)
+
+The IMAP client is shared with Nullify.CalDav (same author and license).

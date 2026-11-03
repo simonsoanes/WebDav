@@ -1,0 +1,92 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Mounts.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add mount" : Model.MountName;
+}
+<div class="page-head">
+    <div>
+        <h1>@(Model.IsNew ? "Add mount" : Model.MountName)</h1>
+        <p><a asp-page="Index">← Mounts</a></p>
+    </div>
+    @if (!Model.IsNew)
+    {
+        <code>@(Model.DavUrl)@Model.MountName/</code>
+    }
+</div>
+<partial name="_ValidationSummary" />
+
+<form method="post" class="stack">
+    <div class="card">
+        <div class="row">
+            <div class="field">
+                <label asp-for="MountName">Name</label>
+                <input asp-for="MountName" readonly="@(!Model.IsNew)" autocomplete="off" placeholder="e.g. projects" />
+                <span class="hint">The folder name under <code>/dav/</code>.</span>
+            </div>
+            <div class="field">
+                <label asp-for="Description">Description</label>
+                <input asp-for="Description" />
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Storage">Storage</label>
+                <select asp-for="Storage">
+                    @foreach (var s in Model.StorageNames)
+                    {
+                        <option value="@s">@s</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label asp-for="MountPath">Default path inside the storage</label>
+                <input asp-for="MountPath" placeholder="e.g. home/{user} — empty for the storage root" />
+                <span class="hint"><code>{user}</code> is replaced by the user name. Rules below can map users to other paths.</span>
+            </div>
+        </div>
+        <div class="checks">
+            <label class="check"><input asp-for="CreateMissing" /> Create the folder on first access</label>
+            <label class="check"><input asp-for="ReadOnly" /> Read only for everyone</label>
+            <label class="check"><input asp-for="IsDefault" /> Server default mount (<code>/dav/~/</code>)</label>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Access rules</h2>
+        <p class="muted small">Checked from the top; the first rule that matches a user decides their access and folder. Users not matched by any rule do not see this mount.
+            Use <code>*</code> for everyone. A path overrides the default path for the matched users, e.g. <code>teams/finance</code> or <code>archive/{user}</code>.</p>
+        <table class="rules">
+            <thead><tr><th>Order</th><th>Users</th><th>Groups</th><th>Access</th><th>Path (optional)</th><th>Remove</th></tr></thead>
+            <tbody>
+            @for (var i = 0; i < Model.Rules.Count; i++)
+            {
+                <tr>
+                    <td><input type="number" asp-for="Rules[i].Order" style="width:4.5rem" /></td>
+                    <td><input type="text" asp-for="Rules[i].Users" placeholder="alice, bob or *" /></td>
+                    <td><input type="text" asp-for="Rules[i].Groups" placeholder="staff" /></td>
+                    <td>
+                        <select asp-for="Rules[i].Access">
+                            <option value="@AccessLevel.ReadWrite">Read &amp; write</option>
+                            <option value="@AccessLevel.Read">Read only</option>
+                            <option value="@AccessLevel.None">No access</option>
+                        </select>
+                    </td>
+                    <td><input type="text" asp-for="Rules[i].Path" placeholder="(default path)" /></td>
+                    <td><input type="checkbox" asp-for="Rules[i].Remove" /></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <p class="hint small muted">Save to get more empty rows.</p>
+    </div>
+    <div><button class="primary" type="submit">Save mount</button></div>
+</form>
+
+@if (Model.Existing != null)
+{
+    <div class="card" style="margin-top:1.25rem">
+        <h2>Remove mount</h2>
+        <p class="muted">Removes it from the configuration only; files are left in place.</p>
+        <form method="post" asp-page-handler="Delete"><button class="danger" type="submit">Remove @Model.Existing.Name</button></form>
+    </div>
+}

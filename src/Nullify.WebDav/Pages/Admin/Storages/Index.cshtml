@@ -1,0 +1,42 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Storages.IndexModel
+@{
+    ViewData["Title"] = "Storage";
+}
+<div class="page-head">
+    <div>
+        <h1>Storage</h1>
+        <p>Where files live. Mounts expose folders inside a storage to users.</p>
+    </div>
+    <a class="btn primary" asp-page="Edit">Add storage</a>
+</div>
+
+<div class="card">
+    @if (Model.Storages.Count == 0)
+    {
+        <p class="empty">No storage configured.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Name</th><th>Root</th><th>Options</th><th>Mounts</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var (s, exists, mounts) in Model.Storages)
+            {
+                <tr>
+                    <td><a asp-page="Edit" asp-route-name="@s.Name"><b>@s.Name</b></a>
+                        @if (!string.IsNullOrEmpty(s.Description)) { <div class="muted small">@s.Description</div> }</td>
+                    <td class="small"><code>@s.Root</code> @if (!exists) { <span class="badge warn">not found</span> }</td>
+                    <td>
+                        @if (s.ReadOnly) { <span class="badge">read only</span> }
+                        @if (s.Impersonate) { <span class="badge accent">impersonate</span> }
+                        @if (s.FollowSymlinks) { <span class="badge">follows links</span> }
+                    </td>
+                    <td>@mounts</td>
+                    <td class="actions"><a class="btn small" asp-page="Edit" asp-route-name="@s.Name">Edit</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>

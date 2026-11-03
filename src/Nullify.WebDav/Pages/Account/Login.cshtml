@@ -1,0 +1,28 @@
+@page
+@model Nullify.WebDav.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+<div class="narrow">
+    <div class="card">
+        <h1>Sign in</h1>
+        <p class="muted">See your folders and connection details, and manage app passwords.</p>
+        <partial name="_ValidationSummary" />
+        <form method="post" class="stack">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div class="field">
+                <label asp-for="Username">Username</label>
+                <input asp-for="Username" autocomplete="username" autofocus />
+                @if (Model.HasProviders)
+                {
+                    <span class="hint">Your server, Windows or directory account, as set up by your administrator.</span>
+                }
+            </div>
+            <div class="field">
+                <label asp-for="Password"></label>
+                <input asp-for="Password" autocomplete="current-password" />
+            </div>
+            <button class="primary block" type="submit">Sign in</button>
+        </form>
+    </div>
+</div>

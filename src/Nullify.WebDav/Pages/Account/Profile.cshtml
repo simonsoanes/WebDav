@@ -1,0 +1,98 @@
+@page
+@model Nullify.WebDav.Pages.Account.ProfileModel
+@{
+    ViewData["Title"] = "Profile";
+}
+<div class="page-head">
+    <div>
+        <h1>@Model.Account.DisplayName</h1>
+        <p>Your account and device passwords.</p>
+    </div>
+</div>
+<partial name="_ValidationSummary" />
+
+<div class="card">
+    <h2>Account</h2>
+    <dl class="kv">
+        <dt>Username</dt>
+        <dd><code>@Model.Account.Username</code></dd>
+        <dt>Signs in with</dt>
+        <dd>@(Model.IsLocal ? "Password stored on this server" : Model.Account.Provider)
+            @if (!Model.Account.Listed) { <span class="badge">accepted by provider</span> }
+        </dd>
+        <dt>Groups</dt>
+        <dd>@(Model.Account.Groups.Count == 0 ? "None" : string.Join(", ", Model.Account.Groups.Order()))</dd>
+        <dt>Role</dt>
+        <dd>@(Model.Account.IsAdmin ? "Administrator" : "User")</dd>
+    </dl>
+</div>
+
+@if (Model.AppPasswordsAvailable)
+{
+    <div class="card">
+        <h2>App passwords</h2>
+        <p class="muted">Give each device its own password and revoke it when the device is lost. App passwords work for WebDAV clients, not for this web page, and not for folders accessed as your Windows account.</p>
+        @if (Model.NewAppPassword != null)
+        {
+            <div class="alert ok">
+                New app password — copy it now, it will not be shown again:<br />
+                <span class="secret">@Model.NewAppPassword</span>
+            </div>
+        }
+        @if (Model.Listed!.AppPasswords.Count > 0)
+        {
+            <table>
+                <thead><tr><th>Name</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var a in Model.Listed.AppPasswords)
+                {
+                    <tr>
+                        <td>@a.Name</td>
+                        <td class="muted">@a.CreatedUtc.ToString("yyyy-MM-dd")</td>
+                        <td class="actions">
+                            <form method="post" asp-page-handler="RevokeAppPassword" asp-route-id="@a.Id"><button class="small danger" type="submit">Revoke</button></form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+        <form method="post" asp-page-handler="CreateAppPassword" class="row" style="margin-top:1rem">
+            <div class="field">
+                <label asp-for="AppPasswordName">Device name</label>
+                <input asp-for="AppPasswordName" placeholder="e.g. Laptop" maxlength="100" />
+            </div>
+            <button class="primary" type="submit">Create app password</button>
+        </form>
+    </div>
+}
+
+@if (Model.IsLocal)
+{
+    <div class="card">
+        <h2>Change password</h2>
+        <form method="post" asp-page-handler="Password" class="stack" style="max-width:420px">
+            <div class="field">
+                <label asp-for="CurrentPassword">Current password</label>
+                <input asp-for="CurrentPassword" type="password" autocomplete="current-password" />
+            </div>
+            <div class="field">
+                <label asp-for="NewPassword">New password</label>
+                <input asp-for="NewPassword" type="password" autocomplete="new-password" />
+                <span class="hint">At least @PasswordHasher.MinimumLength characters. Other browser sessions are signed out.</span>
+            </div>
+            <div class="field">
+                <label asp-for="ConfirmPassword">Confirm new password</label>
+                <input asp-for="ConfirmPassword" type="password" autocomplete="new-password" />
+            </div>
+            <div><button class="primary" type="submit">Change password</button></div>
+        </form>
+    </div>
+}
+else
+{
+    <div class="card">
+        <h2>Password</h2>
+        <p class="muted">Your password is managed by <b>@Model.Account.Provider</b>; change it there.</p>
+    </div>
+}

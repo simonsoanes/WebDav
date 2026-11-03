@@ -1,0 +1,41 @@
+# Nullify.WebDav behind Caddy (automatic HTTPS).
+# Copy .env.example to .env and set your host name, then: docker compose up -d --build
+services:
+  webdav:
+    build: .
+    image: nullify-webdav:latest
+    container_name: nullify-webdav
+    restart: unless-stopped
+    # Only reachable through Caddy; the app trusts X-Forwarded-* headers from private networks by default.
+    expose:
+      - "8080"
+    volumes:
+      - webdav-data:/data
+      # Must be writable by UID 1654 (the image's non-root "app" user).
+      - ${FILES_PATH:-./files}:/files
+    environment:
+      - TZ=UTC
+      # Optional: require this token on the first-run setup page.
+      - Setup__Token=${SETUP_TOKEN:-}
+
+  caddy:
+    image: caddy:2
+    container_name: nullify-webdav-caddy
+    restart: unless-stopped
+    depends_on:
+      - webdav
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DAV_HOST=${DAV_HOST:-files.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  webdav-data:
+  caddy-data:
+  caddy-config:

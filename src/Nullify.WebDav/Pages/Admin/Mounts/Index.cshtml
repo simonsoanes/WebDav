@@ -1,0 +1,44 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Mounts.IndexModel
+@{
+    ViewData["Title"] = "Mounts";
+}
+<div class="page-head">
+    <div>
+        <h1>Mounts</h1>
+        <p>Folders under <code>@(Model.DavUrl)</code>. Each maps users and groups to a path on a storage.</p>
+    </div>
+    <a class="btn primary" asp-page="Edit">Add mount</a>
+</div>
+
+<div class="card">
+    @if (Model.Mounts.Count == 0)
+    {
+        <p class="empty">No mounts yet: users will not see any folders.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Mount</th><th>Storage path</th><th>Rules</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var m in Model.Mounts)
+            {
+                <tr>
+                    <td>
+                        <a asp-page="Edit" asp-route-name="@m.Name"><b>@m.Name</b></a>
+                        @if (Names.Eq(m.Name, Model.DefaultMount)) { <span class="badge accent">default</span> }
+                        @if (m.ReadOnly) { <span class="badge">read only</span> }
+                        @if (!string.IsNullOrEmpty(m.Description)) { <div class="muted small">@m.Description</div> }
+                    </td>
+                    <td class="small"><code>@m.Storage:/@m.Path</code></td>
+                    <td class="small">
+                        @if (m.Rules.Count == 0) { <span class="muted">no rules: nobody has access</span> }
+                        @foreach (var r in m.Rules) { <div>@Nullify.WebDav.Pages.Admin.Mounts.IndexModel.Describe(r)</div> }
+                    </td>
+                    <td class="actions"><a class="btn small" asp-page="Edit" asp-route-name="@m.Name">Edit</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>

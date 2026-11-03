@@ -1,0 +1,75 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Storages.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add storage" : Model.StorageName;
+}
+<div class="page-head">
+    <div>
+        <h1>@(Model.IsNew ? "Add storage" : Model.StorageName)</h1>
+        <p><a asp-page="Index">← Storage</a></p>
+    </div>
+</div>
+<partial name="_ValidationSummary" />
+
+@if (Model.Status is { } st)
+{
+    <div class="card">
+        <dl class="kv">
+            <dt>Root folder</dt>
+            <dd>@if (st.Exists) { <span class="status-ok">found</span> } else { <span class="status-bad">not found or not accessible to the service account</span> }</dd>
+            @if (st.Free != null)
+            {
+                <dt>Free space</dt>
+                <dd>@st.Free</dd>
+            }
+            <dt>Used by</dt>
+            <dd>@(Model.UsedBy.Count == 0 ? "No mounts" : string.Join(", ", Model.UsedBy))</dd>
+        </dl>
+    </div>
+}
+
+<div class="card">
+    <form method="post" class="stack">
+        <div class="row">
+            <div class="field">
+                <label asp-for="StorageName">Name</label>
+                <input asp-for="StorageName" readonly="@(!Model.IsNew)" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label asp-for="Description">Description</label>
+                <input asp-for="Description" />
+            </div>
+        </div>
+        <div class="field">
+            <label asp-for="Root">Root folder</label>
+            <input asp-for="Root" placeholder="@(Model.IsWindows ? @"D:\Shares or \\fileserver\share" : "/srv/files")" />
+            <span class="hint">An absolute path@(Model.IsWindows ? " or UNC share" : ""). Nothing outside it can be reached through any mount.</span>
+        </div>
+        <div class="checks">
+            <label class="check"><input asp-for="CreateRoot" /> Create the folder if it does not exist</label>
+            <label class="check"><input asp-for="ReadOnly" /> Read only</label>
+            <label class="check"><input asp-for="FollowSymlinks" /> Follow symbolic links and junctions</label>
+            @if (Model.IsWindows)
+            {
+                <label class="check"><input asp-for="Impersonate" /> Access files as the signed-in Windows user</label>
+            }
+        </div>
+        <p class="hint small muted">
+            Links are not followed by default, so a link inside the root cannot expose anything outside it.
+            @if (Model.IsWindows)
+            {
+                <span>With impersonation, NTFS and share permissions apply to each user; it requires users who sign in through a Windows authentication provider with their Windows password.</span>
+            }
+        </p>
+        <div><button class="primary" type="submit">Save</button></div>
+    </form>
+</div>
+
+@if (Model.Existing != null)
+{
+    <div class="card">
+        <h2>Remove storage</h2>
+        <p class="muted">Removes it from the configuration only; files are left in place.</p>
+        <form method="post" asp-page-handler="Delete"><button class="danger" type="submit">Remove @Model.Existing.Name</button></form>
+    </div>
+}

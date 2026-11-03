@@ -1,0 +1,40 @@
+@page
+@model SetupModel
+@{
+    ViewData["Title"] = "Setup";
+}
+<div class="narrow">
+    <div class="card">
+        <h1>Welcome</h1>
+        <p class="muted">Create the first administrator account to finish setting up Nullify.WebDav.</p>
+        <partial name="_ValidationSummary" />
+        <form method="post" class="stack">
+            @if (Model.TokenRequired)
+            {
+                <div class="field">
+                    <label asp-for="SetupToken"></label>
+                    <input asp-for="SetupToken" type="password" autocomplete="off" />
+                    <span class="hint">Configured via the <code>Setup__Token</code> environment variable.</span>
+                </div>
+            }
+            <div class="field">
+                <label asp-for="Username"></label>
+                <input asp-for="Username" autocomplete="username" autofocus />
+            </div>
+            <div class="field">
+                <label asp-for="DisplayName"></label>
+                <input asp-for="DisplayName" />
+            </div>
+            <div class="field">
+                <label asp-for="Password"></label>
+                <input asp-for="Password" autocomplete="new-password" />
+                <span class="hint">At least @PasswordHasher.MinimumLength characters.</span>
+            </div>
+            <div class="field">
+                <label asp-for="ConfirmPassword"></label>
+                <input asp-for="ConfirmPassword" autocomplete="new-password" />
+            </div>
+            <button class="primary block" type="submit">Create administrator</button>
+        </form>
+    </div>
+</div>

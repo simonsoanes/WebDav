@@ -1,0 +1,48 @@
+# systemd unit for Nullify.WebDav published as a self-contained single file:
+#   dotnet publish src/Nullify.WebDav -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o /opt/nullify-webdav
+#   useradd --system --home /var/lib/nullify-webdav --shell /usr/sbin/nologin nullify-webdav
+#   install -d -o nullify-webdav -g nullify-webdav -m 750 /var/lib/nullify-webdav /srv/webdav
+#   cp deploy/nullify-webdav.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now nullify-webdav
+
+[Unit]
+Description=Nullify.WebDav file server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=nullify-webdav
+Group=nullify-webdav
+ExecStart=/opt/nullify-webdav/Nullify.WebDav
+WorkingDirectory=/opt/nullify-webdav
+Environment=ASPNETCORE_URLS=http://127.0.0.1:8080
+Environment=Storage__DataDirectory=/var/lib/nullify-webdav
+Environment=Storage__FilesDirectory=/srv/webdav
+Environment=DOTNET_NOLOGO=true
+# Optional: require this token on the first-run setup page.
+#Environment=Setup__Token=change-me
+Restart=on-failure
+RestartSec=5
+
+# PAM authentication with pam_unix needs to read /etc/shadow: uncomment the next line, and
+# leave NoNewPrivileges off if your pam_unix uses the setuid unix_chkpwd helper instead.
+#SupplementaryGroups=shadow
+NoNewPrivileges=true
+
+# Hardening: the service can only write its data directory and the storage roots listed here.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nullify-webdav /srv/webdav
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

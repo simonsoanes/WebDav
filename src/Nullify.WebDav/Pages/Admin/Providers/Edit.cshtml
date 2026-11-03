@@ -1,0 +1,136 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Providers.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add provider" : Model.ProviderName;
+}
+<div class="page-head">
+    <div>
+        <h1>@(Model.IsNew ? "Add authentication provider" : Model.ProviderName)</h1>
+        <p><a asp-page="Index">← Authentication</a></p>
+    </div>
+</div>
+<partial name="_ValidationSummary" />
+@if (!Model.Supported)
+{
+    <div class="alert err">@Model.Type providers are not supported on this server's operating system; logins through it will fail.</div>
+}
+
+<form method="post" class="stack">
+    <div class="card">
+        <div class="row">
+            <div class="field">
+                <label asp-for="ProviderName">Name</label>
+                <input asp-for="ProviderName" readonly="@(!Model.IsNew)" autocomplete="off" placeholder="e.g. windows, ad, unix" />
+            </div>
+            <div class="field">
+                <label asp-for="Type">Type</label>
+                <select asp-for="Type" asp-items="Html.GetEnumSelectList<ProviderType>()"></select>
+            </div>
+            <div class="field">
+                <label asp-for="Description">Description</label>
+                <input asp-for="Description" />
+            </div>
+        </div>
+        <div class="checks">
+            <label class="check"><input asp-for="Enabled" /> Enabled</label>
+            <label class="check"><input asp-for="UseOsGroups" /> Use operating system groups (Windows, PAM)</label>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Unlisted accounts</h2>
+        <p class="muted small">Listed users choose this provider on their user page. You can also let anyone this provider accepts sign in, without listing them; mount rules then grant access through <code>*</code> or their groups.</p>
+        <div class="checks">
+            <label class="check"><input asp-for="AcceptUnlisted" /> Accept accounts that are not listed under Users</label>
+            <label class="check"><input asp-for="StripDomain" /> Drop the domain from their user name (<code>CONTOSO\alice</code> → <code>alice</code>)</label>
+        </div>
+        <div class="row" style="margin-top:.75rem">
+            <div class="field">
+                <label asp-for="DefaultGroups">Groups for everyone signing in here</label>
+                <input asp-for="DefaultGroups" placeholder="e.g. domain-users" />
+            </div>
+            <div class="field">
+                <label asp-for="AdminGroups">Administrator groups</label>
+                <input asp-for="AdminGroups" placeholder="e.g. CONTOSO\Domain Admins, wheel" />
+                <span class="hint">Members administer this server.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Windows</h2>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Domain">Default domain</label>
+                <input asp-for="Domain" placeholder="empty: this computer, then trusted domains" />
+                <span class="hint">Users may also sign in as <code>DOMAIN\user</code> or <code>user@@domain</code>.</span>
+            </div>
+        </div>
+        <label class="check"><input asp-for="CleartextLogon" /> Network-cleartext logon (needed for impersonated access to UNC shares, as with IIS Basic authentication)</label>
+    </div>
+
+    <div class="card">
+        <h2>PAM</h2>
+        <div class="field" style="max-width:320px">
+            <label asp-for="Service">PAM service</label>
+            <input asp-for="Service" />
+            <span class="hint">A file in <code>/etc/pam.d/</code>, e.g. <code>login</code> or a dedicated <code>nullify-webdav</code>.</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>LDAP and IMAP</h2>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Host">Server</label>
+                <input asp-for="Host" placeholder="dc1.example.com" />
+            </div>
+            <div class="field" style="max-width:140px">
+                <label asp-for="Port">Port</label>
+                <input asp-for="Port" type="number" min="0" max="65535" />
+                <span class="hint">0 = default</span>
+            </div>
+            <div class="field" style="max-width:180px">
+                <label asp-for="Security">Security</label>
+                <select asp-for="Security" asp-items="Html.GetEnumSelectList<TransportSecurity>()"></select>
+            </div>
+        </div>
+        <div class="field">
+            <label asp-for="LoginTemplate">Login sent to the server</label>
+            <input asp-for="LoginTemplate" />
+            <span class="hint">LDAP bind name, e.g. <code>{user}@@example.com</code> (Active Directory) or <code>uid={user},ou=people,dc=example,dc=com</code>. IMAP login, e.g. <code>{user}@@example.com</code>.</span>
+        </div>
+        <label class="check"><input asp-for="AllowInvalidCertificates" /> Accept invalid TLS certificates (testing only)</label>
+    </div>
+
+    <div><button class="primary" type="submit">Save provider</button></div>
+
+    <div class="card" style="margin-top:.5rem">
+        <h2>Test sign-in</h2>
+        <p class="muted small">Checks a login with the settings above, saved or not. Nothing is cached and no session is created.</p>
+        @if (Model.TestResult != null)
+        {
+            <div class="alert @(Model.TestOk ? "ok" : "err")">@Model.TestResult</div>
+        }
+        <div class="row">
+            <div class="field">
+                <label asp-for="TestLogin">Login</label>
+                <input asp-for="TestLogin" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label asp-for="TestPassword">Password</label>
+                <input asp-for="TestPassword" type="password" autocomplete="off" />
+            </div>
+            <button type="submit" asp-page-handler="Test">Test</button>
+        </div>
+    </div>
+</form>
+
+@if (Model.Existing != null)
+{
+    <div class="card" style="margin-top:1.25rem">
+        <h2>Remove provider</h2>
+        <p class="muted">Users assigned to it can no longer sign in until moved to another provider.</p>
+        <form method="post" asp-page-handler="Delete"><button class="danger" type="submit">Remove @Model.Existing.Name</button></form>
+    </div>
+}

@@ -1,0 +1,82 @@
+@page
+@model Nullify.WebDav.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+<div class="page-head">
+    <div>
+        <h1>Settings</h1>
+        <p>Server-wide options. Everything is stored in <code>@Model.ConfigPath</code>.</p>
+    </div>
+</div>
+<partial name="_ValidationSummary" />
+
+<div class="card">
+    <h2>General</h2>
+    <form method="post" class="stack">
+        <div class="row">
+            <div class="field">
+                <label asp-for="DefaultMount">Default mount</label>
+                <select asp-for="DefaultMount">
+                    <option value="">(none)</option>
+                    @foreach (var m in Model.MountNames)
+                    {
+                        <option value="@m">@m</option>
+                    }
+                </select>
+                <span class="hint">Served at <code>/dav/~/</code> unless a user has their own default.</span>
+            </div>
+            <div class="field">
+                <label asp-for="MaxUploadMegabytes">Upload limit (MiB)</label>
+                <input asp-for="MaxUploadMegabytes" type="number" min="0" />
+                <span class="hint">0 = limited only by free space.</span>
+            </div>
+            <div class="field">
+                <label asp-for="MaxLockTimeoutMinutes">Longest lock (minutes)</label>
+                <input asp-for="MaxLockTimeoutMinutes" type="number" min="1" />
+                <span class="hint">Clients asking for longer or infinite locks get this.</span>
+            </div>
+        </div>
+        <div class="checks">
+            <label class="check"><input asp-for="BrowserListing" /> Folder listings in web browsers</label>
+            <label class="check"><input asp-for="AllowAppPasswords" /> Allow app passwords</label>
+            <label class="check"><input asp-for="AllowInsecureHttp" /> Accept passwords over plain HTTP (testing only)</label>
+        </div>
+        <div><button class="primary" type="submit">Save settings</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Active locks</h2>
+    @if (Model.Locks.Count == 0)
+    {
+        <p class="empty">No files are locked.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Resource</th><th>Held by</th><th>Scope</th><th>Expires</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var l in Model.Locks)
+            {
+                <tr>
+                    <td class="small"><code>@l.RootHref</code></td>
+                    <td>@l.Principal</td>
+                    <td>@(l.Exclusive ? "exclusive" : "shared")@(l.Infinite ? ", infinite" : "")</td>
+                    <td class="muted small">@l.ExpiresUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                    <td class="actions"><form method="post" asp-page-handler="ReleaseLock" asp-route-token="@l.Token"><button class="small danger" type="submit">Release</button></form></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
+    <h2>Configuration file</h2>
+    <p class="muted small">The complete configuration as JSON. It is validated before it is saved; the file can also be edited directly and is reloaded automatically.</p>
+    <form method="post" asp-page-handler="Raw" class="stack">
+        <textarea asp-for="RawConfig" class="code" spellcheck="false"></textarea>
+        <div><button class="danger" type="submit">Save configuration</button></div>
+    </form>
+</div>

@@ -1,0 +1,10 @@
+# Caddy reverse proxy for Nullify.WebDav.
+# The host name comes from the environment (see docker-compose.yml / .env).
+# Caddy sets X-Forwarded-For/-Proto/-Host and does not limit request body size by default.
+
+{$DAV_HOST} {
+	reverse_proxy webdav:8080 {
+		# Stream downloads straight through rather than buffering them.
+		flush_interval -1
+	}
+}

@@ -1,0 +1,12 @@
+@{
+    var errors = ViewData.ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).Where(e => !string.IsNullOrEmpty(e)).ToList();
+}
+@if (errors.Count > 0)
+{
+    <div class="alert err">
+        @foreach (var e in errors)
+        {
+            <div>@e</div>
+        }
+    </div>
+}

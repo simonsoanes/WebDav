@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webdav",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Nullify.WebDav", "--launch-profile", "http"],
+      "port": 5031
+    }
+  ]
+}

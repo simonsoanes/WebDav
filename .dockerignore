@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/data/
+**/TestResults/
+publish/
+.git/
+.gitea/
+.vs/
+.vscode/
+.idea/
+.env
+deploy/
+*.md
+!README.md

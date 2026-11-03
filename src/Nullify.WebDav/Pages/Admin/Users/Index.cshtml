@@ -1,0 +1,50 @@
+@page
+@model Nullify.WebDav.Pages.Admin.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+}
+<div class="page-head">
+    <div>
+        <h1>Users</h1>
+        <p>Accounts listed here, plus anyone an authentication provider accepts as an unlisted user.</p>
+    </div>
+    <a class="btn primary" asp-page="Edit">Add user</a>
+</div>
+
+<div class="card">
+    @if (Model.Users.Count == 0)
+    {
+        <p class="empty">No users.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>User</th><th>Signs in with</th><th>Groups</th><th>Default mount</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var u in Model.Users)
+            {
+                <tr>
+                    <td>
+                        <a asp-page="Edit" asp-route-name="@u.Username"><b>@u.Username</b></a>
+                        @if (u.IsAdmin) { <span class="badge accent">admin</span> }
+                        @if (!u.Enabled) { <span class="badge warn">disabled</span> }
+                        @if (!string.IsNullOrEmpty(u.DisplayName)) { <div class="muted small">@u.DisplayName</div> }
+                    </td>
+                    <td>@u.Provider @if (!string.IsNullOrEmpty(u.Login)) { <span class="muted small">as @u.Login</span> }</td>
+                    <td class="small">@Names.JoinList(u.Groups)</td>
+                    <td>@u.DefaultMount</td>
+                    <td class="actions"><a class="btn small" asp-page="Edit" asp-route-name="@u.Username">Edit</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (Model.UnlistedProviders.Count > 0)
+{
+    <div class="card">
+        <h2>Unlisted accounts</h2>
+        <p class="muted">These providers also accept accounts that are not listed above: @string.Join(", ", Model.UnlistedProviders). Their access comes from the groups they belong to and rules that match everyone (<code>*</code>).</p>
+    </div>
+}

@@ -1,0 +1,87 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Overview";
+    var first = Model.Default ?? Model.Mounts.FirstOrDefault();
+}
+<div class="page-head">
+    <div>
+        <h1>Hello, @Model.DisplayName</h1>
+        <p>Connect your devices using the details below.</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Connection details</h2>
+    <dl class="kv">
+        <dt>Server URL</dt>
+        <dd><code>@Model.DavUrl</code> <span class="muted small">all your folders</span></dd>
+        @if (Model.Default != null)
+        {
+            <dt>Your default folder</dt>
+            <dd><code>@Model.Default.Url</code> <span class="muted small">opens <b>@Model.Default.Name</b></span></dd>
+        }
+        <dt>Username</dt>
+        <dd><code>@Model.Username</code></dd>
+        <dt>Password</dt>
+        <dd>
+            @if (Model.NeedsWindowsPassword)
+            {
+                <span>Your Windows password (folders marked <span class="badge">Windows account</span> are accessed as you).</span>
+            }
+            else if (Model.AppPasswordsAvailable)
+            {
+                <span>Your account password or an <a asp-page="/Account/Profile">app password</a> (recommended for devices).</span>
+            }
+            else
+            {
+                <span>Your account password.</span>
+            }
+        </dd>
+    </dl>
+    @if (first != null)
+    {
+        <details style="margin-top:1rem">
+            <summary>Client setup</summary>
+            <ul class="small tips">
+                <li><b>Windows Explorer:</b> <i>This PC → Map network drive</i>, folder <code>@Model.UncPath(first.Url)</code>, or from a command prompt:
+                    <code>net use * "@first.Url" /user:@Model.Username</code>. Uploads above 50 MB need the <code>FileSizeLimitInBytes</code> setting of the WebClient service raised.</li>
+                <li><b>macOS Finder:</b> <i>Go → Connect to Server</i> (⌘K) and enter <code>@first.Url</code>.</li>
+                <li><b>Linux (GNOME Files, Dolphin):</b> <i>Other Locations → Connect to Server</i>, <code>@first.Url.Replace("https://", "davs://").Replace("http://", "dav://")</code>; or mount with <code>davfs2</code>.</li>
+                <li><b>rclone, Cyberduck, WinSCP, mobile file managers:</b> choose WebDAV and enter <code>@first.Url</code>.</li>
+            </ul>
+        </details>
+    }
+</div>
+
+<div class="card">
+    <h2>Your folders</h2>
+    @if (Model.Mounts.Count == 0)
+    {
+        <p class="empty">You do not have access to any folders yet. Ask your administrator.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Folder</th><th>Access</th><th>Address</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var m in Model.Mounts)
+            {
+                <tr>
+                    <td>
+                        <b>@m.Name</b>
+                        @if (m.IsDefault) { <span class="badge accent">default</span> }
+                        @if (m.Impersonated) { <span class="badge">Windows account</span> }
+                        @if (!string.IsNullOrEmpty(m.Description)) { <div class="muted small">@m.Description</div> }
+                    </td>
+                    <td>@(m.CanWrite ? "Read & write" : "Read only")</td>
+                    <td class="small"><code>@m.Url</code></td>
+                    <td class="actions">
+                        @if (!m.Impersonated) { <a class="btn small" href="@m.Url">Browse</a> }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
