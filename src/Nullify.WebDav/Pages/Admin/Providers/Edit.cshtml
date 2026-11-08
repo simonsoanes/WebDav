@@ -33,7 +33,7 @@
         </div>
         <div class="checks">
             <label class="check"><input asp-for="Enabled" /> Enabled</label>
-            <label class="check"><input asp-for="UseOsGroups" /> Use operating system groups (Windows, PAM)</label>
+            <label class="check"><input asp-for="UseOsGroups" /> Use the provider's groups (Windows, PAM, OpenID Connect)</label>
         </div>
     </div>
 
@@ -55,6 +55,56 @@
                 <span class="hint">Members administer this server.</span>
             </div>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>OpenID Connect</h2>
+        <p class="muted small">Single sign-on with Entra ID, Google, Okta, Keycloak, Authentik and other OpenID Connect providers. People sign in to the web interface with
+            a button on the sign-in page; for WebDAV clients they create app passwords under <i>Account</i>. Register a confidential (or public, PKCE) web client with the
+            redirect URI <code>@Model.CallbackUrl</code>.</p>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Authority">Issuer (authority)</label>
+                <input asp-for="Authority" placeholder="https://login.example.com/realms/staff" />
+                <span class="hint">Its <code>/.well-known/openid-configuration</code> must be reachable from this server.</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="ClientId">Client ID</label>
+                <input asp-for="ClientId" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label asp-for="ClientSecret">Client secret</label>
+                <input asp-for="ClientSecret" type="password" autocomplete="new-password" placeholder="@(Model.HasClientSecret ? "unchanged (" + Model.SecretSource + ")" : "empty for a public client")" />
+                <span class="hint">Or <code>env:VARIABLE</code> to read it from an environment variable.@if (Model.HasClientSecret) { <label class="check" style="display:inline-flex;margin-left:.5rem"><input asp-for="ClearClientSecret" /> remove</label> }</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="Scopes">Scopes</label>
+                <input asp-for="Scopes" />
+                <span class="hint"><code>openid</code> is always requested. Some providers need a scope (e.g. <code>groups</code>) to include groups.</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label asp-for="UsernameClaim">User name claim</label>
+                <input asp-for="UsernameClaim" />
+                <span class="hint"><code>preferred_username</code>, <code>email</code> or <code>upn</code>. The domain is dropped if set above.</span>
+            </div>
+            <div class="field">
+                <label asp-for="DisplayNameClaim">Display name claim</label>
+                <input asp-for="DisplayNameClaim" />
+            </div>
+            <div class="field">
+                <label asp-for="GroupsClaim">Groups claim</label>
+                <input asp-for="GroupsClaim" />
+                <span class="hint">e.g. <code>groups</code> or <code>roles</code>; used when <i>Use operating system groups</i> is on.</span>
+            </div>
+        </div>
+        <p class="muted small">Accounts are tied to the provider's subject (<code>sub</code>) at their first sign-in, kept in the user's <i>Login</i>. With <i>accept unlisted accounts</i>
+            a user is created at their first sign-in, so they can make app passwords.</p>
     </div>
 
     <div class="card">
@@ -107,7 +157,8 @@
 
     <div class="card" style="margin-top:.5rem">
         <h2>Test sign-in</h2>
-        <p class="muted small">Checks a login with the settings above, saved or not. Nothing is cached and no session is created.</p>
+        <p class="muted small">Checks a login with the settings above, saved or not. Nothing is cached and no session is created.
+            For OpenID Connect it reads the provider's discovery document instead; the login and password are not needed.</p>
         @if (Model.TestResult != null)
         {
             <div class="alert @(Model.TestOk ? "ok" : "err")">@Model.TestResult</div>
@@ -121,7 +172,7 @@
                 <label asp-for="TestPassword">Password</label>
                 <input asp-for="TestPassword" type="password" autocomplete="off" />
             </div>
-            <button type="submit" asp-page-handler="Test">Test</button>
+            <button type="submit" asp-page-handler="Test" asp-route-name="@Model.Name">Test</button>
         </div>
     </div>
 </form>

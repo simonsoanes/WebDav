@@ -68,12 +68,26 @@ public static class ConfigValidator
                 if (!(p.LoginTemplate ?? "").Contains("{user}")) errors.Add($"{label}: the login template must contain {{user}}.");
             }
             if (p.Type == ProviderType.Pam && string.IsNullOrWhiteSpace(p.Service)) errors.Add($"{label}: a PAM service name is required.");
+            p.Scopes ??= [];
+            if (p.Type == ProviderType.OpenIdConnect)
+            {
+                if (!Uri.TryCreate(p.Authority, UriKind.Absolute, out var authority) || authority.Scheme is not ("https" or "http") || authority.Query.Length > 0)
+                    errors.Add($"{label}: the authority must be the issuer's https:// URL.");
+                else if (authority.Scheme == "http" && !authority.IsLoopback)
+                    errors.Add($"{label}: the authority must use https (http is only allowed for localhost).");
+                if (string.IsNullOrWhiteSpace(p.ClientId)) errors.Add($"{label}: a client ID is required.");
+                if (string.IsNullOrWhiteSpace(p.UsernameClaim)) errors.Add($"{label}: a user name claim is required.");
+                if (p.ClientSecret == "env:") errors.Add($"{label}: name the environment variable after env:.");
+                foreach (var scope in p.Scopes)
+                    if (scope.Length == 0 || scope.Any(c => c <= ' ' || c == '"')) errors.Add($"{label}: invalid scope '{scope}'.");
+            }
         }
 
         Unique(errors, "user", c.Users.Select(u => u.Username));
         foreach (var u in c.Users)
         {
             u.Groups ??= [];
+            u.ExternalGroups ??= [];
             u.AppPasswords ??= [];
             var label = $"User '{u.Username}'";
             if (!Names.IsValidUsername(u.Username)) errors.Add($"{label}: usernames may contain letters, digits, '.', '_', '-' and '@' and must start with a letter or digit.");

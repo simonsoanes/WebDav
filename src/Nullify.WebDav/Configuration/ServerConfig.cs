@@ -20,6 +20,8 @@ public enum ProviderType
     Ldap,
     /// <summary>IMAP login, e.g. against the mail server that owns the accounts.</summary>
     Imap,
+    /// <summary>OpenID Connect single sign-on (Entra ID, Google, Keycloak, Authentik, ...). Browser sign-in only; WebDAV clients use app passwords.</summary>
+    OpenIdConnect,
 }
 
 public enum TransportSecurity
@@ -99,6 +101,24 @@ public sealed class AuthProviderConfig
     public bool AllowInvalidCertificates { get; set; }
     /// <summary>Login sent to the server: {user} is replaced, e.g. "{user}@example.com" or "uid={user},ou=people,dc=example,dc=com".</summary>
     public string LoginTemplate { get; set; } = "{user}";
+
+    // OpenID Connect
+    /// <summary>The issuer URL; its /.well-known/openid-configuration describes everything else.</summary>
+    public string Authority { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    /// <summary>The client secret, or "env:NAME" to read it from an environment variable. Empty for public clients (PKCE only).</summary>
+    public string ClientSecret { get; set; } = "";
+    /// <summary>Scopes requested besides "openid".</summary>
+    public List<string> Scopes { get; set; } = ["profile", "email"];
+    /// <summary>Claim that names the user; "email" is used when it is missing.</summary>
+    public string UsernameClaim { get; set; } = "preferred_username";
+    public string DisplayNameClaim { get; set; } = "name";
+    /// <summary>Claim listing the user's groups or roles (used when UseOsGroups is on).</summary>
+    public string GroupsClaim { get; set; } = "groups";
+
+    /// <summary>The client secret with an "env:" reference resolved.</summary>
+    public string ResolveClientSecret() =>
+        ClientSecret.StartsWith("env:", StringComparison.Ordinal) ? Environment.GetEnvironmentVariable(ClientSecret[4..]) ?? "" : ClientSecret;
 }
 
 public sealed class UserConfig
@@ -113,6 +133,8 @@ public sealed class UserConfig
     public bool Enabled { get; set; } = true;
     public bool IsAdmin { get; set; }
     public List<string> Groups { get; set; } = [];
+    /// <summary>Groups the user's single sign-on provider reported at their last sign-in; app passwords use these.</summary>
+    public List<string> ExternalGroups { get; set; } = [];
     /// <summary>Mount served at <c>/dav/~/</c> for this user.</summary>
     public string DefaultMount { get; set; } = "";
     /// <summary>Changes whenever credentials change, which signs out browser sessions.</summary>

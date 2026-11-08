@@ -18,6 +18,16 @@ public class LoginModel(CredentialValidator credentials, ConfigStore store) : Ap
 
     public bool HasProviders => store.Current.AuthProviders.Any(p => p.Enabled);
 
+    /// <summary>Enabled single sign-on providers: (name, button label).</summary>
+    public List<(string Name, string Label)> SingleSignOn => store.Current.AuthProviders
+        .Where(p => p is { Enabled: true, Type: ProviderType.OpenIdConnect })
+        .Select(p => (p.Name, string.IsNullOrWhiteSpace(p.Description) ? p.Name : p.Description)).ToList();
+
+    /// <summary>Whether anyone can sign in with a password: local users exist, or a password-checking provider is enabled.</summary>
+    public bool HasPasswordProviders =>
+        store.Current.Users.Any(u => u.Enabled && Names.Eq(u.Provider, UserConfig.LocalProvider)) ||
+        store.Current.AuthProviders.Any(p => p.Enabled && p.Type != ProviderType.OpenIdConnect);
+
     public IActionResult OnGet() => User.Identity?.IsAuthenticated == true ? Landing() : Page();
 
     /// <summary>Where the user asked to go, else straight to their files.</summary>

@@ -22,6 +22,7 @@ public static class TestHost
 
     public static FakeLdapServer Ldap { get; } = new();
     public static FakeImapServer Imap { get; } = new();
+    public static FakeOidcServer Oidc { get; } = new();
     public static string DataDir { get; private set; } = null!;
     public static string FilesDir { get; private set; } = null!;
     public static string AppPassword { get; } = PasswordHasher.GenerateToken();
@@ -48,6 +49,7 @@ public static class TestHost
         try
         {
             if (_factory != null) return _factory;
+            await Oidc.StartAsync();
             DataDir = NewTempDir("data");
             FilesDir = Path.Combine(DataDir, "files");
             Directory.CreateDirectory(FilesDir);
@@ -72,6 +74,8 @@ public static class TestHost
                 LoginTemplate = "uid={user},ou=people,dc=example,dc=com", AcceptUnlisted = true, DefaultGroups = ["directory"] },
             new AuthProviderConfig { Name = "mail", Type = ProviderType.Imap, Host = "127.0.0.1", Port = Imap.Port, Security = TransportSecurity.None,
                 LoginTemplate = "{user}@example.com" },
+            new AuthProviderConfig { Name = "corp", Type = ProviderType.OpenIdConnect, Description = "Corp SSO", Authority = Oidc.Issuer,
+                ClientId = FakeOidcServer.ClientId, ClientSecret = FakeOidcServer.ClientSecret, AcceptUnlisted = true, AdminGroups = ["idp-admins"] },
         ],
         Users =
         [
@@ -80,6 +84,7 @@ public static class TestHost
                 AppPasswords = [new AppPasswordConfig { Name = "phone", Hash = PasswordHasher.Sha256(AppPassword) }] },
             new UserConfig { Username = "carol", Provider = "dir" },
             new UserConfig { Username = "dave", Provider = "mail" },
+            new UserConfig { Username = "frank", DisplayName = "Frank", Provider = "corp" },
             new UserConfig { Username = "mallory", PasswordHash = PasswordHasher.Hash("mallory-password"), Enabled = false },
         ],
         Storages = [new StorageConfig { Name = "files", Root = FilesDir }],
@@ -101,6 +106,7 @@ public static class TestHost
         _factory?.Dispose();
         Ldap.Dispose();
         Imap.Dispose();
+        Oidc.DisposeAsync().AsTask().GetAwaiter().GetResult();
         lock (TempDirs)
             foreach (var dir in TempDirs)
                 try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }

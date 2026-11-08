@@ -1,0 +1,218 @@
+@* Copyright 2026 Simon Soanes
+   SPDX-License-Identifier: Apache-2.0 *@
+@inject DavClient Dav
+
+@* Chooses a destination folder for "Move to" and "Copy to": any folder the user can write to, in any mount or share. *@
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal picker" role="dialog" aria-modal="true" aria-label="@Title" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <div class="modal-head">
+            <Icon Name="@(Copy ? "copy" : "folder-input")" Size="18" />
+            <h3 style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">@Title</h3>
+            <button class="icon-btn" @onclick="Close" title="Close (Esc)"><Icon Name="x" /></button>
+        </div>
+        <div class="modal-body">
+            <nav class="crumbs picker-crumbs" aria-label="Destination">
+                <button class="crumb" @onclick="() => Go(null, [])"><Icon Name="hard-drive" Size="15" /> <span>All folders</span></button>
+                @if (mount != null)
+                {
+                    <Icon Name="chevron-right" Size="13" Class="crumb-sep" />
+                    <button class="crumb" @onclick="() => Go(mount, [])">@mount.Title</button>
+                    @for (var i = 0; i < path.Length; i++)
+                    {
+                        var upTo = path[..(i + 1)];
+                        <Icon Name="chevron-right" Size="13" Class="crumb-sep" />
+                        <button class="crumb" @onclick="() => Go(mount, upTo)">@path[i]</button>
+                    }
+                }
+            </nav>
+            <div class="picker-list">
+                @if (mount == null)
+                {
+                    @foreach (var m in Mounts)
+                    {
+                        var target = m;
+                        <button class="picker-item" @onclick="() => Go(target, [])" disabled="@(!m.CanWrite)" title="@(m.CanWrite ? m.Title : m.Title + " (read only)")">
+                            <Icon Name="@m.Icon" Size="17" /><span>@m.Title</span>@if (!m.CanWrite) { <small>read only</small> }
+                            <Icon Name="chevron-right" Size="14" Class="picker-go" />
+                        </button>
+                    }
+                }
+                else if (loading)
+                {
+                    <div class="boot inline"><span class="spinner"></span></div>
+                }
+                else if (error != null)
+                {
+                    <div class="alert err"><Icon Name="alert" Size="15" /><div>@error</div></div>
+                }
+                else
+                {
+                    @foreach (var f in folders)
+                    {
+                        var name = f.Name;
+                        var blocked = IsBlocked(f.Url);
+                        <button class="picker-item" @onclick="() => Go(mount, [.. path, name])" disabled="@blocked" title="@(blocked ? "You are moving this folder" : name)">
+                            <Icon Name="folder" Size="17" Class="ic-folder" /><span>@name</span>
+                            <Icon Name="chevron-right" Size="14" Class="picker-go" />
+                        </button>
+                    }
+                    @if (folders.Count == 0)
+                    {
+                        <div class="nav-empty" style="padding:1rem .25rem;">No folders inside. @(Copy ? "Copy" : "Move") here, or make a new one.</div>
+                    }
+                }
+            </div>
+            @if (creating)
+            {
+                <div class="input-row" style="margin-top:.75rem;">
+                    <input @ref="nameInput" @bind="newName" @bind:event="oninput" @onkeydown="NewKey" placeholder="New folder name" aria-label="New folder name" />
+                    <button class="btn accent" @onclick="CreateFolder">Create</button>
+                    <button class="btn ghost" @onclick="() => creating = false">Cancel</button>
+                </div>
+                @if (nameProblem != null) { <div class="help" style="color:var(--danger);margin-top:.35rem;">@nameProblem</div> }
+            }
+        </div>
+        <div class="modal-foot">
+            @if (mount != null && !loading && error == null && !creating)
+            {
+                <button class="btn ghost" @onclick="StartNew"><Icon Name="folder-plus" Size="15" /> New folder</button>
+            }
+            <span class="status">@Hint</span>
+            <span class="spacer"></span>
+            <button class="btn" @onclick="Close">Cancel</button>
+            <button class="btn accent" @onclick="Pick" disabled="@(!CanPick)">@(Copy ? "Copy here" : "Move here")</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>A place to start browsing: a mount or a folder shared with the user.</summary>
+    public sealed record Root(string Segment, string Title, string Icon, bool CanWrite);
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public bool Copy { get; set; }
+    [Parameter, EditorRequired] public List<Root> Mounts { get; set; } = [];
+    /// <summary>The folder the items are in now; browsing starts here.</summary>
+    [Parameter] public string? StartMount { get; set; }
+    [Parameter] public string[] StartPath { get; set; } = [];
+    /// <summary>URLs of the items being moved or copied (a folder cannot go into itself).</summary>
+    [Parameter] public List<string> Sources { get; set; } = [];
+    [Parameter] public EventCallback<string> OnPick { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private Root? mount;
+    private string[] path = [];
+    private List<DavEntry> folders = [];
+    private bool loading, creating, focusName;
+    private string? error;
+    private string? nameProblem;
+    private string newName = "";
+    private ElementReference nameInput;
+    private int token;
+
+    private string Url => "dav/" + Uri.EscapeDataString(mount!.Segment) + "/" + string.Concat(path.Select(p => Uri.EscapeDataString(p) + "/"));
+
+    private bool CanPick => mount is { CanWrite: true } && !loading && error == null && !IsBlocked(Url) && (Copy || !IsSourceParent);
+
+    /// <summary>Moving items to the folder they are already in does nothing.</summary>
+    private bool IsSourceParent => Sources.Count > 0 && Sources.All(s => Parent(s) == Url);
+
+    private string Hint => mount == null ? "Choose a folder."
+        : !mount.CanWrite ? "This folder is read only."
+        : IsBlocked(Url) ? "A folder cannot go inside itself."
+        : !Copy && IsSourceParent ? "They are already here."
+        : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var start = StartMount == null ? null : Mounts.FirstOrDefault(m => Names.Eq(m.Segment, StartMount));
+        await Go(start is { CanWrite: true } ? start : null, start is { CanWrite: true } ? StartPath : []);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusName) return;
+        focusName = false;
+        try { await nameInput.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+
+    private bool IsBlocked(string url) => Sources.Any(s => s.EndsWith('/') && url.StartsWith(s, StringComparison.Ordinal));
+
+    private static string Parent(string url)
+    {
+        var trimmed = url.TrimEnd('/');
+        return trimmed[..(trimmed.LastIndexOf('/') + 1)];
+    }
+
+    private async Task Go(Root? target, string[] segments)
+    {
+        mount = target;
+        path = segments;
+        creating = false;
+        error = null;
+        folders = [];
+        if (target == null) return;
+        var t = ++token;
+        loading = true;
+        try
+        {
+            var listing = await Dav.ListAsync(Url);
+            if (t != token) return;
+            folders = listing.Items.Where(i => i.IsFolder).OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+        catch (Exception ex) when (ex is DavException or HttpRequestException)
+        {
+            if (t == token) error = ex.Message;
+        }
+        finally
+        {
+            if (t == token) loading = false;
+        }
+    }
+
+    private void StartNew()
+    {
+        creating = true;
+        nameProblem = null;
+        newName = "";
+        focusName = true;
+    }
+
+    private async Task NewKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CreateFolder();
+        else if (e.Key == "Escape") creating = false;
+    }
+
+    private async Task CreateFolder()
+    {
+        var name = newName.Trim();
+        if (name.Length == 0 || name is "." or ".." || name.IndexOfAny(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) >= 0 || name.EndsWith('.') || name.EndsWith(' '))
+        {
+            nameProblem = "Enter a name without / \\ : * ? \" < > | and not ending in a dot or space.";
+            return;
+        }
+        nameProblem = null;
+        try
+        {
+            await Dav.CreateFolderAsync(DavClient.Child(Url, name, true));
+            await Go(mount, [.. path, name]);
+        }
+        catch (Exception ex) when (ex is DavException or HttpRequestException)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && !creating) await Close();
+    }
+
+    private async Task Pick()
+    {
+        if (CanPick) await OnPick.InvokeAsync(Url);
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

@@ -13,8 +13,9 @@
     <RepositoryUrl>https://git.nullify.net/Simon/Nullify.WebDav</RepositoryUrl>
   </PropertyGroup>
 
-  <!-- Hosting integration only: lets the same binary run as a Windows service or a systemd (Type=notify) unit. -->
+  <!-- Microsoft packages only: Windows service and systemd (Type=notify) hosting, and OpenID Connect sign-in. -->
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.14" />
   </ItemGroup>

@@ -49,6 +49,8 @@ builder.Services.AddSingleton<ICredentialProvider, WindowsLogonProvider>();
 builder.Services.AddSingleton<ICredentialProvider, PamProvider>();
 builder.Services.AddSingleton<ICredentialProvider, LdapProvider>();
 builder.Services.AddSingleton<ICredentialProvider, ImapProvider>();
+builder.Services.AddSingleton<ICredentialProvider, OidcCredentialProvider>();
+builder.Services.AddDynamicOpenIdConnect();
 builder.Services.AddSingleton<ProviderRegistry>();
 builder.Services.AddSingleton<CredentialValidator>();
 builder.Services.AddSingleton<MountResolver>();
@@ -144,6 +146,7 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+app.UseDynamicOpenIdConnect();
 app.UseMiddleware<SetupGateMiddleware>();
 
 // The Windows redirector probes the server root with OPTIONS and PROPFIND before opening the share.
@@ -159,6 +162,7 @@ app.UseAuthorization();
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapRazorPages();
 app.MapFileApi();
+app.MapExternalSignIn();
 
 app.Run();
 

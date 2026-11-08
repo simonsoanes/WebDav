@@ -29,6 +29,15 @@ public class EditModel(ConfigStore store, ProviderRegistry registry, CredentialV
     [BindProperty] public TransportSecurity Security { get; set; } = TransportSecurity.Tls;
     [BindProperty] public bool AllowInvalidCertificates { get; set; }
     [BindProperty] public string LoginTemplate { get; set; } = "{user}";
+    [BindProperty] public string Authority { get; set; } = "";
+    [BindProperty] public string ClientId { get; set; } = "";
+    /// <summary>Left empty on the form to keep the saved secret; never sent back to the browser.</summary>
+    [BindProperty] public string ClientSecret { get; set; } = "";
+    [BindProperty] public bool ClearClientSecret { get; set; }
+    [BindProperty] public string Scopes { get; set; } = "profile email";
+    [BindProperty] public string UsernameClaim { get; set; } = "preferred_username";
+    [BindProperty] public string DisplayNameClaim { get; set; } = "name";
+    [BindProperty] public string GroupsClaim { get; set; } = "groups";
 
     [BindProperty] public string? TestLogin { get; set; }
     [BindProperty] public string? TestPassword { get; set; }
@@ -38,6 +47,11 @@ public class EditModel(ConfigStore store, ProviderRegistry registry, CredentialV
     public bool Supported => registry.IsSupported(Type);
     public string? TestResult { get; private set; }
     public bool TestOk { get; private set; }
+    public bool HasClientSecret => Existing?.ClientSecret.Length > 0;
+    public string SecretSource => Existing?.ClientSecret.StartsWith("env:", StringComparison.Ordinal) == true ? Existing.ClientSecret : "stored";
+
+    /// <summary>The redirect URI to register at the identity provider.</summary>
+    public string CallbackUrl => $"{ServerUrl}/signin-oidc/{(string.IsNullOrWhiteSpace(ProviderName) ? "<name>" : ProviderName.Trim().ToLowerInvariant())}";
 
     private void Load() => Existing = IsNew ? null : store.Current.AuthProviders.FirstOrDefault(p => Names.Eq(p.Name, Name));
 
@@ -68,6 +82,13 @@ public class EditModel(ConfigStore store, ProviderRegistry registry, CredentialV
         Security = p.Security;
         AllowInvalidCertificates = p.AllowInvalidCertificates;
         LoginTemplate = p.LoginTemplate;
+        Authority = p.Authority;
+        ClientId = p.ClientId;
+        ClientSecret = "";
+        Scopes = string.Join(' ', p.Scopes);
+        UsernameClaim = p.UsernameClaim;
+        DisplayNameClaim = p.DisplayNameClaim;
+        GroupsClaim = p.GroupsClaim;
     }
 
     private void Apply(AuthProviderConfig p)
@@ -88,6 +109,15 @@ public class EditModel(ConfigStore store, ProviderRegistry registry, CredentialV
         p.Security = Security;
         p.AllowInvalidCertificates = AllowInvalidCertificates;
         p.LoginTemplate = string.IsNullOrWhiteSpace(LoginTemplate) ? "{user}" : LoginTemplate.Trim();
+        p.Authority = Authority.Trim();
+        p.ClientId = ClientId.Trim();
+        if (ClearClientSecret) p.ClientSecret = "";
+        else if (!string.IsNullOrWhiteSpace(ClientSecret)) p.ClientSecret = ClientSecret.Trim();
+        p.Scopes = Scopes.Split([' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s != "openid").Distinct(StringComparer.Ordinal).ToList();
+        p.UsernameClaim = UsernameClaim.Trim();
+        p.DisplayNameClaim = DisplayNameClaim.Trim();
+        p.GroupsClaim = GroupsClaim.Trim();
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -127,6 +157,11 @@ public class EditModel(ConfigStore store, ProviderRegistry registry, CredentialV
         ModelState.Clear();
         var probe = new AuthProviderConfig { Name = string.IsNullOrWhiteSpace(ProviderName) ? "test" : ProviderName.Trim() };
         Apply(probe);
+        if (Type == ProviderType.OpenIdConnect)
+        {
+            (TestOk, TestResult) = await OidcDiscovery.CheckAsync(probe, HttpContext.RequestAborted);
+            return Page();
+        }
         if (string.IsNullOrWhiteSpace(TestLogin) || string.IsNullOrEmpty(TestPassword))
         {
             TestResult = "Enter a login and password to test.";

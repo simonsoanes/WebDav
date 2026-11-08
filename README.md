@@ -1,12 +1,12 @@
 # Nullify.WebDav
 
-A self-hosted, multi-user **WebDAV file server** built on .NET 10 with no third-party dependencies, a focus on security and a single configuration file. It maps **users and groups** to **paths** on one or more **storage services**, gives each user a **default folder**, and can verify passwords against the **operating system** (Windows or Linux), an **LDAP directory** or an **IMAP server** — and on Windows access files **as the signed-in user**, so NTFS and share permissions apply.
+A self-hosted, multi-user **WebDAV file server** built on .NET 10 with no third-party (non-Microsoft) dependencies, a focus on security and a single configuration file. It maps **users and groups** to **paths** on one or more **storage services**, gives each user a **default folder**, and can verify passwords against the **operating system** (Windows or Linux), an **LDAP directory** or an **IMAP server**, offer **single sign-on with OpenID Connect** — and on Windows access files **as the signed-in user**, so NTFS and share permissions apply.
 
 - **WebDAV class 1 and 2** (RFC 4918): `PROPFIND`, `PROPPATCH`, `GET`/`HEAD` with ranges and conditional requests, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE`, `LOCK`/`UNLOCK` with a complete `If` header implementation
 - Works with **Windows Explorer** (mapped drives, Win32 properties, Office locking), **macOS Finder**, **GNOME/KDE**, **davfs2**, **rclone**, **Cyberduck**, **WinSCP** and mobile file managers
 - **Storage services** → **mounts** → **access rules**: the first rule matching a user or group decides read/write access and which folder the user gets (`home/{user}`, `teams/finance`, ...)
 - **Default folder** per user and server-wide, always reachable at `/dav/~/`
-- **Authentication**: local PBKDF2 passwords, **Windows** (`LogonUser`, local or domain), **PAM**, **LDAP** simple bind (Active Directory, OpenLDAP, FreeIPA, Samba), **IMAP**; per-device **app passwords**; optionally accept **unlisted accounts** that a provider verifies, with **operating system groups**
+- **Authentication**: local PBKDF2 passwords, **Windows** (`LogonUser`, local or domain), **PAM**, **LDAP** simple bind (Active Directory, OpenLDAP, FreeIPA, Samba), **IMAP**, **OpenID Connect** single sign-on (Entra ID, Google, Okta, Keycloak, Authentik, ...); per-device **app passwords**; optionally accept **unlisted accounts** that a provider verifies, with **operating system groups**
 - **Windows impersonation**: storage can be accessed with the user's own Windows token, including UNC shares on another file server
 - **Web file manager** (Blazor WebAssembly) at the same `/dav/` URLs: upload with progress (files and whole folders), drag and drop from the desktop and between folders, right-click menus, cut/copy/paste, rename, new folders and text files with a built-in editor, keyboard shortcuts; WebDAV clients keep working on the very same addresses
 - **Folder sharing** between users: share a folder with people or groups, read-only or read & write; it appears under *Shared with me* and as a folder in their WebDAV connection, follows renames and can never grant more than the owner has
@@ -152,8 +152,20 @@ How a login is checked:
 | **Pam** | `pam_authenticate` + `pam_acct_mgmt` | Unix groups (`getgrouplist`) | Linux only. See below. |
 | **Ldap** | Simple bind over LDAPS (636) or StartTLS (389) | — | `LoginTemplate` builds the bind name: `{user}@contoso.com` (AD) or `uid={user},ou=people,dc=example,dc=com`. Empty passwords (anonymous binds) are refused before contacting the server, and user names are limited to characters that cannot alter a DN. |
 | **Imap** | IMAP login (TLS, STARTTLS, `AUTHENTICATE PLAIN` or `LOGIN`) | — | `LoginTemplate` such as `{user}@example.com`. |
+| **OpenIdConnect** | Single sign-on in the browser (authorization code flow with PKCE) | The `GroupsClaim` (e.g. `groups`, `roles`) | No passwords: WebDAV clients use app passwords. See below. |
 
 *Authentication → (provider) → Test sign-in* tries a login with the settings on the form and shows the groups found, without saving or caching anything.
+
+### OpenID Connect
+
+Add a provider of type *OpenIdConnect* with the issuer URL (for example `https://login.microsoftonline.com/<tenant>/v2.0`, `https://accounts.google.com` or `https://sso.example.com/realms/staff`), a client ID and, for confidential clients, a secret, and register `https://<your host>/signin-oidc/<provider name>` as the redirect URI at the identity provider. The sign-in page then shows *Sign in with <description>*. Providers are added, changed and removed without a restart; *Test sign-in* reads the discovery document and checks that the issuer matches.
+
+- The protocol is handled by ASP.NET Core's OpenID Connect handler: authorization code flow, PKCE, `form_post` responses, state and nonce, ID token signature, issuer, audience and lifetime checks, and the userinfo endpoint when there is one. No tokens are stored.
+- The user name comes from `UsernameClaim` (default `preferred_username`, falling back to `email`; with *drop the domain* `alice@contoso.com` becomes `alice`), the display name from `DisplayNameClaim`, and groups from `GroupsClaim` when *use the provider's groups* is on. Groups count for mount rules, sharing and *administrator groups*.
+- Accounts are **bound to the provider's subject** (`sub`): the first sign-in records it as the user's *Login*, and afterwards only that subject signs in as the user, so a renamed or recycled account at the provider cannot take over someone's folders. A provider account can never take the name of a user of another provider or a local user.
+- Users the administrator lists for the provider (by user name) are bound at their first sign-in. With *accept unlisted accounts*, anyone the provider authenticates gets a user entry at their first sign-in, so they can create **app passwords** for WebDAV clients (which carry the groups from their last sign-in). Disable or remove the user to lock them out.
+- The client secret is stored in the configuration file unless you write `env:VARIABLE`, which reads it from that environment variable at run time.
+- The issuer must use https (plain http is accepted only for `localhost`). Signing out ends the session here only, not at the identity provider.
 
 ### PAM
 
@@ -189,7 +201,7 @@ Each user's *Connect devices* page shows their own URLs and the matching command
 Opening any folder under `/dav/` in a browser shows the file manager for that folder, so links can be bookmarked and shared and the address bar always holds the folder's WebDAV URL. Signing in lands on the user's default folder. It is a Blazor WebAssembly app served by the same process; it reads and writes through the WebDAV endpoint itself and uses a small JSON API (`/api/session`, `/api/shares`, `/api/people`) for what WebDAV cannot express.
 
 - **Upload** with the *Upload* button, *Upload folder*, or by dragging files and folders from the desktop onto the window or onto a folder row. Uploads stream straight from the browser (`XMLHttpRequest`, with a progress bar and *Cancel*), keep the files' modification times and never overwrite without asking.
-- **Move** by dragging items onto a folder, a breadcrumb or a folder in the sidebar; hold Ctrl (or ⌥) to copy. Cut, copy and paste work across folders and mounts.
+- **Move** by dragging items onto a folder, a breadcrumb or a folder in the sidebar; hold Ctrl (or ⌥) to copy. *Move to…* and *Copy to…* in the right-click menu (and the toolbar) open a folder picker covering every mount and shared folder you can write to, where you can also make a new folder. Cut, copy and paste work across folders and mounts too.
 - **Right-click** an item or the empty space for its menu; *More* (⋯) on a row opens the same menu on touch devices.
 - **Text files** (`.txt`, `.md`, `.json`, source code and similar, up to 5 MB) open in an editor; saving uses `If-Match`, so a change someone else made in the meantime is never silently overwritten. Other files open in a new tab, sandboxed by the download CSP.
 - Keys: <kbd>Del</kbd> delete, <kbd>F2</kbd> rename, <kbd>Enter</kbd> open, <kbd>Backspace</kbd> up, <kbd>Ctrl</kbd>+<kbd>A</kbd>/<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd>, arrow keys (with Shift to extend), <kbd>Ctrl</kbd>+<kbd>S</kbd> in the editor.
@@ -222,7 +234,7 @@ Right-click a folder (or use *Share folder* in the toolbar) to share it with peo
 - Quota properties (RFC 4331), `current-user-privilege-set` (RFC 3744), the Windows redirector's `Win32*` properties (applied to file times and attributes) and legacy `ishidden`/`isreadonly`/`iscollection`, `X-OC-Mtime`, `X-Expected-Entity-Length`
 - `OPTIONS` and `PROPFIND` on the server root for the Windows redirector
 
-Not implemented: arbitrary dead properties (`PROPPATCH` of other properties returns `403`, nothing is silently dropped), `PROPFIND` with `Depth: infinity`, multiple byte ranges, partial `PUT`, Digest/NTLM/Kerberos authentication, group lookups from LDAP, server-side search (`SEARCH`), versioning (DeltaV), ACL changes over WebDAV, and storage backends other than the file system (including remote SMB without Windows impersonation).
+Not implemented: arbitrary dead properties (`PROPPATCH` of other properties returns `403`, nothing is silently dropped), `PROPFIND` with `Depth: infinity`, multiple byte ranges, partial `PUT`, Digest/NTLM/Kerberos authentication, OpenID Connect for WebDAV clients themselves (they use app passwords), group lookups from LDAP, server-side search (`SEARCH`), versioning (DeltaV), ACL changes over WebDAV, and storage backends other than the file system (including remote SMB without Windows impersonation).
 
 ## CI/CD
 
@@ -255,7 +267,7 @@ src/Nullify.WebDav.Shared   API contracts shared by server and client
 
 ### Dependencies
 
-The server uses only the .NET and ASP.NET Core shared frameworks plus `Microsoft.Extensions.Hosting.WindowsServices` and `Microsoft.Extensions.Hosting.Systemd`, two small Microsoft packages that let the same binary run as a Windows service or a systemd unit. The file manager uses `Microsoft.AspNetCore.Components.WebAssembly`; its few browser helpers (drag and drop, uploads) are a small script in this repository, with no JavaScript libraries. The WebDAV implementation, LDAP and IMAP clients, PAM and Windows logon interop are part of this project. There is no database: the configuration is a JSON file and locks are kept in memory.
+The server uses only the .NET and ASP.NET Core shared frameworks plus Microsoft packages: `Microsoft.Extensions.Hosting.WindowsServices` and `Microsoft.Extensions.Hosting.Systemd` let the same binary run as a Windows service or a systemd unit, and `Microsoft.AspNetCore.Authentication.OpenIdConnect` (with the `Microsoft.IdentityModel` libraries it brings) implements single sign-on. The file manager uses `Microsoft.AspNetCore.Components.WebAssembly`; its few browser helpers (drag and drop, uploads) are a small script in this repository, with no JavaScript libraries. The WebDAV implementation, LDAP and IMAP clients, PAM and Windows logon interop are part of this project. There is no database: the configuration is a JSON file and locks are kept in memory.
 
 ## License
 

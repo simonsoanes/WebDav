@@ -159,6 +159,11 @@
                                 <button class="btn small" @onclick="() => ToClipboard(true)" title="Cut (Ctrl+X)"><Icon Name="scissors" Size="15" /> <span class="tool-label">Cut</span></button>
                             }
                             <button class="btn small" @onclick="() => ToClipboard(false)" title="Copy (Ctrl+C)"><Icon Name="copy" Size="15" /> <span class="tool-label">Copy</span></button>
+                            @if (CanWrite)
+                            {
+                                <button class="btn small" @onclick="() => OpenPicker(false)" title="Move to another folder"><Icon Name="folder-input" Size="15" /> <span class="tool-label">Move to…</span></button>
+                            }
+                            <button class="btn small" @onclick="() => OpenPicker(true)" title="Copy to another folder"><Icon Name="copy" Size="15" /> <span class="tool-label">Copy to…</span></button>
                             @if (CanWrite && sel.Count == 1)
                             {
                                 <button class="btn small" @onclick="() => StartRename(sel[0])" title="Rename (F2)"><Icon Name="pen" Size="15" /> <span class="tool-label">Rename</span></button>
@@ -439,6 +444,11 @@
                     <button class="menu-item" @onclick="() => FromMenu(() => ToClipboard(true))"><Icon Name="scissors" Size="16" /> <span>Cut</span><span class="spacer"></span><kbd>Ctrl X</kbd></button>
                 }
                 <button class="menu-item" @onclick="() => FromMenu(() => ToClipboard(false))"><Icon Name="copy" Size="16" /> <span>Copy</span><span class="spacer"></span><kbd>Ctrl C</kbd></button>
+                @if (CanWrite)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => OpenPicker(false))"><Icon Name="folder-input" Size="16" /> <span>Move to…</span></button>
+                }
+                <button class="menu-item" @onclick="() => FromMenu(() => OpenPicker(true))"><Icon Name="copy" Size="16" /> <span>Copy to…</span></button>
                 @if (one is { IsFolder: true } && CanWrite && clipboard.Count > 0)
                 {
                     <button class="menu-item" @onclick="() => FromMenu(() => PasteInto(one.Url))"><Icon Name="clipboard" Size="16" /> <span>Paste into folder</span></button>
@@ -467,6 +477,12 @@
     @if (editing != null)
     {
         <TextEditor Url="@editing.Url" Name="@editing.Name" Size="editing.Size" ReadOnly="!CanWrite" OnClose="EditorClosed" />
+    }
+
+    @if (picker is { } pick)
+    {
+        <FolderPicker Title="@pick.Title" Copy="pick.Copy" Mounts="PickerRoots()" StartMount="@mountSegment" StartPath="segments"
+                      Sources="pick.Items.Select(i => i.Url).ToList()" OnPick="PickerChosen" OnClose="() => picker = null" />
     }
 
     @if (sharing != null)

@@ -89,7 +89,8 @@ public sealed class CredentialValidator
         var user = FindUser(c, login);
         if (user != null) return user.Enabled ? await CheckListedAsync(c, user, password, purpose, ct) : null;
 
-        foreach (var provider in c.AuthProviders.Where(p => p.Enabled && p.AcceptUnlisted))
+        // Single sign-on providers have no passwords to check; their users are created at their first browser sign-in.
+        foreach (var provider in c.AuthProviders.Where(p => p is { Enabled: true, AcceptUnlisted: true } && p.Type != ProviderType.OpenIdConnect))
         {
             var result = await RunProviderAsync(provider, login, password, ct);
             if (result == null) continue;
@@ -127,6 +128,8 @@ public sealed class CredentialValidator
             {
                 groups.UnionWith(provider.DefaultGroups);
                 if (provider.UseOsGroups && result?.Groups != null) groups.UnionWith(result.Groups);
+                // Single sign-on users on app passwords keep the groups their provider reported at their last sign-in.
+                if (provider is { UseOsGroups: true, Type: ProviderType.OpenIdConnect }) groups.UnionWith(user.ExternalGroups);
             }
             return new DavPrincipal
             {

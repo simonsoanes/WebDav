@@ -80,6 +80,7 @@ public sealed partial class Files
     private bool uploading => upload != null;
 
     private DavEntry? editing;
+    private (List<DavEntry> Items, bool Copy, string Title)? picker;
     private (string Mount, string Path, string Name, bool CanWrite, List<ShareInfo> Existing)? sharing;
     private bool sidebarOpen;
 
@@ -749,6 +750,30 @@ public sealed partial class Files
             if (!copy && items.Any(i => i.IsFolder)) await LoadSharesAsync();
         }
         return done > 0;
+    }
+
+    // ------------------------------------------------------------------ move to / copy to
+
+    private void OpenPicker(bool copy)
+    {
+        var items = menuItems.Count > 0 ? menuItems : Selection();
+        if (items.Count == 0) return;
+        var what = items.Count == 1 ? $"\"{items[0].Name}\"" : $"{items.Count} items";
+        picker = (items, copy, $"{(copy ? "Copy" : "Move")} {what} to…");
+    }
+
+    private List<Components.FolderPicker.Root> PickerRoots() =>
+    [
+        .. session!.Mounts.Where(m => m.Unavailable == null)
+            .Select(m => new Components.FolderPicker.Root(m.Name, m.Name, m.IsDefault ? "home" : "hard-drive", m.CanWrite)),
+        .. session.SharedWithMe.Select(s => new Components.FolderPicker.Root(s.Segment, $"{s.Name} ({s.OwnerName})", "folder-shared", s.CanWrite)),
+    ];
+
+    private async Task PickerChosen(string folderUrl)
+    {
+        if (picker is not { } p) return;
+        picker = null;
+        await TransferAsync(p.Items, folderUrl, p.Copy);
     }
 
     private static string ParentOf(string url)

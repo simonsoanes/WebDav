@@ -687,10 +687,13 @@ form.stack > .card { margin-bottom: 0; }
     display: inline-flex; align-items: center; justify-content: center; gap: .4rem; height: 34px; padding: 0 .85rem;
     border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-size: .9rem; font-weight: 500;
 }
-.settings-page button.primary, .login-card button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.settings-page button.primary:hover, .login-card button.primary:hover { background: var(--accent-hover); }
-.settings-page button.danger { color: var(--danger); }
-.settings-page button.danger:hover { background: var(--danger-soft); }
+/* the same :not() chain as above, so these win over it */
+.settings-page button.primary:not(.icon-btn):not(.link):not(.link-btn), .login-card button.primary:not(.icon-btn):not(.link) { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.settings-page button.primary:not(.icon-btn):not(.link):not(.link-btn):hover, .login-card button.primary:not(.icon-btn):not(.link):hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.settings-page button.danger:not(.icon-btn):not(.link):not(.link-btn) { color: var(--danger); }
+.settings-page button.danger:not(.icon-btn):not(.link):not(.link-btn):hover { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.settings-page button.small:not(.icon-btn):not(.link):not(.link-btn) { height: 28px; padding: 0 .6rem; font-size: .82rem; }
+.login-card button.block:not(.icon-btn):not(.link) { width: 100%; height: 40px; }
 .settings-page button.small, .settings-page .btn.small { height: 28px; padding: 0 .6rem; font-size: .82rem; }
 .login-card button.block { width: 100%; height: 40px; }
 button.link { color: var(--muted); padding: 0; }
@@ -725,3 +728,20 @@ textarea.code { font-family: var(--mono); font-size: .85rem; min-height: 32rem; 
 /* Server pages open the sidebar drawer with a #sidebar link (no script needed). */
 @media (max-width: 960px) { .sidebar:target { transform: none; } }
 .page-pane > .page-footer { margin-top: auto; }
+.login-sso { margin-bottom: .5rem; }
+.login-sso .icon { color: var(--muted); }
+
+/* Move to / Copy to folder picker */
+.modal.picker { max-width: 520px; }
+.picker-crumbs { margin-bottom: .5rem; }
+.picker-crumbs .crumb { font-size: .86rem; }
+.picker-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 220px; max-height: 45dvh; overflow-y: auto; padding: .25rem; }
+.picker-item { display: flex; align-items: center; gap: .6rem; width: 100%; padding: .5rem .6rem; border-radius: var(--radius-sm); text-align: left; color: var(--text-2); font-size: .9rem; }
+.picker-item:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.picker-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-item small { color: var(--faint); font-size: .74rem; }
+.picker-item .icon { color: var(--muted); }
+.picker-item .ic-folder { color: var(--accent); }
+.picker-item .picker-go { color: var(--faint); }
+.login-divider { display: flex; align-items: center; gap: .75rem; margin: .9rem 0; color: var(--muted); font-size: .8rem; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }

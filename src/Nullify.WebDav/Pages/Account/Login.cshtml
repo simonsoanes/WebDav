@@ -2,22 +2,34 @@
 @model Nullify.WebDav.Pages.Account.LoginModel
 @{
     ViewData["Title"] = "Sign in";
+    var returnQuery = string.IsNullOrEmpty(Model.ReturnUrl) ? "" : "?returnUrl=" + Uri.EscapeDataString(Model.ReturnUrl);
 }
 <p class="lead">Sign in to open your files, share folders and get connection details for your devices.</p>
-        <partial name="_ValidationSummary" />
-        <form method="post" class="stack">
-            <input type="hidden" asp-for="ReturnUrl" />
-            <div class="field">
-                <label asp-for="Username">Username</label>
-                <input asp-for="Username" autocomplete="username" autofocus />
-                @if (Model.HasProviders)
-                {
-                    <span class="hint">Your server, Windows or directory account, as set up by your administrator.</span>
-                }
-            </div>
-            <div class="field">
-                <label asp-for="Password"></label>
-                <input asp-for="Password" autocomplete="current-password" />
-            </div>
-            <button class="primary block" type="submit">Sign in</button>
-        </form>
+<partial name="_ValidationSummary" />
+@foreach (var (name, label) in Model.SingleSignOn)
+{
+    <a class="btn block login-sso" href="@Url.Content("~/account/external/" + Uri.EscapeDataString(name))@returnQuery">@Html.Raw(PageIcons.Get("key", 16)) Sign in with @label</a>
+}
+@if (Model.SingleSignOn.Count > 0 && Model.HasPasswordProviders)
+{
+    <div class="login-divider">or with a password</div>
+}
+@if (Model.HasPasswordProviders || Model.SingleSignOn.Count == 0)
+{
+    <form method="post" class="stack">
+        <input type="hidden" asp-for="ReturnUrl" />
+        <div class="field">
+            <label asp-for="Username">Username</label>
+            <input asp-for="Username" autocomplete="username" autofocus="@(Model.SingleSignOn.Count == 0)" />
+            @if (Model.HasProviders)
+            {
+                <span class="hint">Your server, Windows or directory account, as set up by your administrator.</span>
+            }
+        </div>
+        <div class="field">
+            <label asp-for="Password"></label>
+            <input asp-for="Password" autocomplete="current-password" />
+        </div>
+        <button class="primary block" type="submit">Sign in</button>
+    </form>
+}

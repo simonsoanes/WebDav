@@ -38,7 +38,8 @@
             <div class="field">
                 <label asp-for="Login">Login at provider</label>
                 <input asp-for="Login" placeholder="same as username" autocomplete="off" />
-                <span class="hint">E.g. <code>CONTOSO\asmith</code> or <code>asmith@@contoso.com</code>. Either name can be used to sign in.</span>
+                <span class="hint">E.g. <code>CONTOSO\asmith</code> or <code>asmith@@contoso.com</code>. Either name can be used to sign in.
+                    For OpenID Connect this is the account's subject (<code>sub</code>), filled in at the first sign-in; clear it to let another account claim the user name.</span>
             </div>
         </div>
         <div class="field">

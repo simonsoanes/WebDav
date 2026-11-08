@@ -21,6 +21,7 @@ public class IndexModel(ConfigStore store, ProviderRegistry registry) : AppPageM
         ProviderType.Windows => string.IsNullOrEmpty(p.Domain) ? "This computer and trusted domains" : "Domain " + p.Domain,
         ProviderType.Pam => "PAM service " + p.Service,
         ProviderType.Ldap or ProviderType.Imap => $"{p.Host}:{(p.Port > 0 ? p.Port : ProviderRegistry.DefaultPort(p.Type, p.Security))} ({p.Security}) as {p.LoginTemplate}",
+        ProviderType.OpenIdConnect => $"{p.Authority} (client {p.ClientId})",
         _ => "",
     };
 }
