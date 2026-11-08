@@ -397,16 +397,13 @@ public sealed class DavTests
     }
 
     [TestMethod]
-    public async Task BrowserListingAndServerRoot()
+    public async Task BrowsersWithBasicCredentialsAreSentToSignInAndServerRoot()
     {
         var c = await Alice();
-        var name = Unique("x&y'z.txt");
-        await SendAsync(c, "PUT", $"/dav/home/{Uri.EscapeDataString(name)}", "x");
-        var (status, html, resp) = await SendAsync(c, "GET", "/dav/home/");
-        Assert.AreEqual(HttpStatusCode.OK, status);
-        Assert.AreEqual("text/html", resp.Content.Headers.ContentType!.MediaType);
-        Assert.IsFalse(html.Contains("x&y'z"), "names are HTML-encoded");
-        StringAssert.Contains(html, "x&amp;y&#39;z.txt");
+        // The file manager needs a browser session; Basic credentials alone get the sign-in page.
+        var (status, _, resp) = await SendAsync(c, "GET", "/dav/home/");
+        Assert.AreEqual(HttpStatusCode.Redirect, status);
+        StringAssert.Contains(resp.Headers.Location!.ToString(), "/account/login?ReturnUrl=%2Fdav%2Fhome%2F");
 
         var (root, body, _) = await SendAsync(c, "PROPFIND", "/", null, ("Depth", "1"));
         Assert.AreEqual(HttpStatusCode.MultiStatus, root);
@@ -422,10 +419,10 @@ public sealed class DavTests
         StringAssert.Contains(resp.Headers.Location!.ToString(), "/account/login");
         var (login, html, _) = await SendAsync(c, "GET", "/account/login");
         Assert.AreEqual(HttpStatusCode.OK, login);
-        StringAssert.Contains(html, "Nullify<b>.WebDav</b>");
+        StringAssert.Contains(html, "<h1>Nullify.WebDav</h1>");
         var (setup, _, _) = await SendAsync(c, "GET", "/setup");
         Assert.AreEqual(HttpStatusCode.Redirect, setup, "setup is closed once an administrator exists");
-        Assert.AreEqual(HttpStatusCode.OK, (await SendAsync(c, "GET", "/css/site.css")).Status);
+        Assert.AreEqual(HttpStatusCode.OK, (await SendAsync(c, "GET", "/css/app.css")).Status);
         Assert.AreEqual(HttpStatusCode.OK, (await SendAsync(c, "GET", "/health")).Status);
     }
 }

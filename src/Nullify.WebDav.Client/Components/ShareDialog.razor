@@ -1,0 +1,250 @@
+@* Copyright 2026 Simon Soanes
+   SPDX-License-Identifier: Apache-2.0 *@
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime JS
+
+@* Share a folder with people and groups, or change or stop an existing share of it. *@
+<div class="modal-backdrop" @onclick="() => Close(false)">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Share @FolderName" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <div class="modal-head">
+            <Icon Name="share" Size="18" />
+            <h3 style="flex:1;">Share “@FolderName”</h3>
+            <button class="icon-btn" @onclick="() => Close(changed)" title="Close"><Icon Name="x" /></button>
+        </div>
+        <div class="modal-body">
+            @if (shares.Count > 0 && edit == null)
+            {
+                <ul class="share-list" style="margin-bottom:1rem;">
+                    @foreach (var s in shares)
+                    {
+                        var share = s;
+                        <li class="@(s.Available ? "" : "broken")">
+                            <Icon Name="folder-shared" Size="18" />
+                            <div>
+                                <strong>@s.Name</strong>
+                                <span>@(s.Access == ShareAccess.ReadWrite ? "Can edit" : "Can view"): @string.Join(", ", s.Users.Concat(s.Groups.Select(g => g + " (group)")))</span>
+                            </div>
+                            <button class="btn small" @onclick="() => StartEdit(share)">Change</button>
+                            <button class="btn small danger" @onclick="() => Stop(share)">Stop</button>
+                        </li>
+                    }
+                </ul>
+                <button class="btn" @onclick="() => StartEdit(null)"><Icon Name="plus" Size="15" /> Share with someone else</button>
+            }
+            else
+            {
+                <p class="muted" style="font-size:.86rem;margin-bottom:1rem;">
+                    They will find it under <b>Shared with me</b> in their file manager and as a folder in their WebDAV connection.
+                </p>
+                <div class="field">
+                    <label for="share-person">People</label>
+                    <div class="input-row">
+                        <input id="share-person" list="share-people" @bind="personInput" @bind:event="oninput" @onkeydown="PersonKey" placeholder="User name" autocomplete="off" />
+                        <button class="btn" @onclick="AddPerson" disabled="@(personInput.Trim().Length == 0)">Add</button>
+                    </div>
+                    <datalist id="share-people">
+                        @foreach (var p in people?.Users ?? [])
+                        {
+                            <option value="@p.Username">@p.DisplayName</option>
+                        }
+                    </datalist>
+                </div>
+                <div class="field">
+                    <label for="share-group">Groups</label>
+                    <div class="input-row">
+                        <input id="share-group" list="share-groups" @bind="groupInput" @bind:event="oninput" @onkeydown="GroupKey" placeholder="Group name (optional)" autocomplete="off" />
+                        <button class="btn" @onclick="AddGroup" disabled="@(groupInput.Trim().Length == 0)">Add</button>
+                    </div>
+                    <datalist id="share-groups">
+                        @foreach (var g in people?.Groups ?? [])
+                        {
+                            <option value="@g"></option>
+                        }
+                    </datalist>
+                </div>
+                @if (users.Count + groups.Count > 0)
+                {
+                    <div class="chips" style="margin:-.35rem 0 .9rem;">
+                        @foreach (var u in users)
+                        {
+                            var user = u;
+                            <span class="chip"><Icon Name="user" Size="13" /><span>@DisplayOf(u)</span><button @onclick="() => users.Remove(user)" title="Remove"><Icon Name="x" Size="12" /></button></span>
+                        }
+                        @foreach (var g in groups)
+                        {
+                            var group = g;
+                            <span class="chip"><Icon Name="users" Size="13" /><span>@g</span><button @onclick="() => groups.Remove(group)" title="Remove"><Icon Name="x" Size="12" /></button></span>
+                        }
+                    </div>
+                }
+                <div class="field">
+                    <label>They can</label>
+                    <div class="radio-cards">
+                        <label><input type="radio" name="share-access" checked="@(access == ShareAccess.Read)" @onchange="() => access = ShareAccess.Read" />
+                            <span>View and download<small>Open, download and copy files.</small></span></label>
+                        <label style="@(CanWrite ? "" : "opacity:.5;pointer-events:none;")"><input type="radio" name="share-access" checked="@(access == ShareAccess.ReadWrite)" disabled="@(!CanWrite)" @onchange="() => access = ShareAccess.ReadWrite" />
+                            <span>Edit<small>@(CanWrite ? "Also add, change and delete files." : "Not possible: you can only read this folder.")</small></span></label>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="share-name">Name they see</label>
+                    <input id="share-name" @bind="name" maxlength="100" />
+                    <span class="help">Shown to them as “@(string.IsNullOrWhiteSpace(name) ? FolderName : name.Trim()) (your user name)”.</span>
+                </div>
+                @if (problem != null)
+                {
+                    <div class="alert err"><Icon Name="alert" Size="15" /><div>@problem</div></div>
+                }
+            }
+        </div>
+        <div class="modal-foot">
+            @if (shares.Count > 0 && edit == null)
+            {
+                <span class="spacer"></span>
+                <button class="btn" @onclick="() => Close(changed)">Done</button>
+            }
+            else
+            {
+                <span class="spacer"></span>
+                @if (shares.Count > 0)
+                {
+                    <button class="btn ghost" @onclick="() => edit = null">Back</button>
+                }
+                <button class="btn" @onclick="() => Close(changed)">Cancel</button>
+                <button class="btn accent" @onclick="Save" disabled="@(busy || users.Count + groups.Count == 0 && personInput.Trim().Length == 0 && groupInput.Trim().Length == 0)">
+                    @(editing != null ? "Save changes" : "Share")
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Mount { get; set; } = "";
+    [Parameter, EditorRequired] public string Path { get; set; } = "";
+    [Parameter, EditorRequired] public string FolderName { get; set; } = "";
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public string DavUrl { get; set; } = "";
+    [Parameter] public List<ShareInfo> Existing { get; set; } = [];
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
+
+    private List<ShareInfo> shares = [];
+    private PeopleDirectory? people;
+    private object? edit;            // non-null while the form is shown over a list of shares
+    private ShareInfo? editing;      // the share being changed; null for a new one
+    private readonly List<string> users = [];
+    private readonly List<string> groups = [];
+    private string personInput = "", groupInput = "", name = "", access = ShareAccess.Read;
+    private string? problem;
+    private bool busy, changed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        shares = [.. Existing];
+        if (shares.Count == 1 && Existing.Count == 1 && Existing[0].Path == Path) StartEdit(shares[0]);
+        if (shares.Count == 0) StartEdit(null);
+        try { people = await Api.PeopleAsync(); }
+        catch (ApiClient.ApiException) { people = new PeopleDirectory([], []); }
+    }
+
+    private void StartEdit(ShareInfo? share)
+    {
+        editing = share;
+        edit = new();
+        users.Clear();
+        groups.Clear();
+        problem = null;
+        if (share != null)
+        {
+            users.AddRange(share.Users);
+            groups.AddRange(share.Groups);
+            name = share.Name;
+            access = share.Access;
+        }
+        else
+        {
+            name = FolderName;
+            access = ShareAccess.Read;
+        }
+    }
+
+    private string DisplayOf(string username) =>
+        people?.Users.FirstOrDefault(p => Names.Eq(p.Username, username)) is { } p && p.DisplayName != p.Username ? $"{p.DisplayName} ({p.Username})" : username;
+
+    private void AddPerson()
+    {
+        var v = personInput.Trim();
+        if (v.Length > 0 && !users.Any(u => Names.Eq(u, v))) users.Add(v);
+        personInput = "";
+    }
+
+    private void AddGroup()
+    {
+        var v = groupInput.Trim();
+        if (v.Length > 0 && !groups.Any(g => Names.Eq(g, v))) groups.Add(v);
+        groupInput = "";
+    }
+
+    private void PersonKey(KeyboardEventArgs e) { if (e.Key == "Enter") AddPerson(); }
+
+    private void GroupKey(KeyboardEventArgs e) { if (e.Key == "Enter") AddGroup(); }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Close(changed);
+    }
+
+    private async Task Save()
+    {
+        AddPerson();
+        AddGroup();
+        busy = true;
+        problem = null;
+        try
+        {
+            var request = new ShareRequest(Mount, Path, name, access, [.. users], [.. groups]);
+            if (editing != null)
+            {
+                var updated = await Api.UpdateShareAsync(editing.Id, request);
+                shares[shares.FindIndex(s => s.Id == updated.Id)] = updated;
+                State.ShowToast($"Updated \"{updated.Name}\"");
+            }
+            else
+            {
+                var created = await Api.CreateShareAsync(request);
+                shares.Add(created);
+                State.ShowToast($"Shared \"{created.Name}\" with {string.Join(", ", created.Users.Concat(created.Groups))}");
+            }
+            changed = true;
+            await Close(true);
+        }
+        catch (ApiClient.ApiException ex)
+        {
+            problem = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Stop(ShareInfo share)
+    {
+        if (!await JS.InvokeAsync<bool>("nullifyFiles.confirm", $"Stop sharing \"{share.Name}\"? The people you shared it with lose access straight away.")) return;
+        try
+        {
+            await Api.DeleteShareAsync(share.Id);
+            shares.Remove(share);
+            changed = true;
+            State.ShowToast($"Stopped sharing \"{share.Name}\"");
+            if (shares.Count == 0) await Close(true);
+        }
+        catch (ApiClient.ApiException ex)
+        {
+            State.ShowToast(ex.Message, true);
+        }
+    }
+
+    private Task Close(bool didChange) => OnClose.InvokeAsync(didChange || changed);
+}

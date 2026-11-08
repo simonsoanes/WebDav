@@ -1,8 +1,6 @@
 // Copyright 2026 Simon Soanes
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Nullify.WebDav.Auth;
@@ -10,44 +8,13 @@ using Nullify.WebDav.Configuration;
 
 namespace Nullify.WebDav.Services;
 
-/// <summary>Serves the embedded stylesheet and icon, so the server is a single file with no wwwroot folder.</summary>
+/// <summary>Cache-busting URLs for the static files (served by MapStaticAssets from the file manager's wwwroot).</summary>
 public static class StaticAssets
 {
-    private sealed record Asset(byte[] Content, string ContentType, string ETag);
+    /// <summary>Changes with every build, so browsers fetch matching scripts and styles after an update.</summary>
+    public static readonly string Version = typeof(StaticAssets).Assembly.ManifestModule.ModuleVersionId.ToString("N")[..12];
 
-    private static readonly ConcurrentDictionary<string, Asset?> Cache = new(StringComparer.OrdinalIgnoreCase);
-
-    private static Asset? Load(string path) => Cache.GetOrAdd(path, p =>
-    {
-        var assembly = typeof(StaticAssets).Assembly;
-        var name = assembly.GetManifestResourceNames().FirstOrDefault(n => n.Replace('\\', '/').Equals("wwwroot" + p, StringComparison.OrdinalIgnoreCase));
-        if (name == null) return null;
-        using var stream = assembly.GetManifestResourceStream(name)!;
-        using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        var bytes = ms.ToArray();
-        var type = p.EndsWith(".css", StringComparison.Ordinal) ? "text/css; charset=utf-8" : p.EndsWith(".svg", StringComparison.Ordinal) ? "image/svg+xml" : "application/octet-stream";
-        return new Asset(bytes, type, "\"" + Convert.ToHexString(SHA256.HashData(bytes))[..16] + "\"");
-    });
-
-    /// <summary>URL with a content hash, so browsers can cache it indefinitely.</summary>
-    public static string Url(string path) => Load(path) is { } a ? $"{path}?v={a.ETag.Trim('"')}" : path;
-
-    public static void MapStaticAssets(this WebApplication app)
-    {
-        foreach (var path in new[] { "/css/site.css", "/favicon.svg" })
-        {
-            app.MapMethods(path, ["GET", "HEAD"], (HttpContext ctx) =>
-            {
-                var asset = Load(path);
-                if (asset == null) return Results.NotFound();
-                ctx.Response.Headers.ETag = asset.ETag;
-                ctx.Response.Headers.CacheControl = ctx.Request.Query.ContainsKey("v") ? "public, max-age=31536000, immutable" : "public, max-age=3600";
-                if (ctx.Request.Headers.IfNoneMatch == asset.ETag) return Results.StatusCode(StatusCodes.Status304NotModified);
-                return Results.Bytes(asset.Content, asset.ContentType);
-            }).AllowAnonymous();
-        }
-    }
+    public static string Url(string path) => $"{path}?v={Version}";
 }
 
 /// <summary>Redirects everything to the first-run setup page until an administrator can sign in.</summary>
@@ -61,7 +28,7 @@ public sealed class SetupGateMiddleware(RequestDelegate next)
         if (!IsComplete(config.Current))
         {
             var path = ctx.Request.Path;
-            if (!path.StartsWithSegments("/setup") && !path.StartsWithSegments("/css") &&
+            if (!path.StartsWithSegments("/setup") && !path.StartsWithSegments("/css") && !path.StartsWithSegments("/js") &&
                 !path.StartsWithSegments("/health") && !path.StartsWithSegments("/favicon.svg"))
             {
                 if (path.StartsWithSegments("/dav") || !HttpMethods.IsGet(ctx.Request.Method))

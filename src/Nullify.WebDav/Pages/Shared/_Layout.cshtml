@@ -6,61 +6,97 @@
     string Active(string prefix) => (prefix == "/" ? path == "/" : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
     var pm = ViewData.Model as AppPageModel;
     var pathBase = Context.Request.PathBase.Value ?? "";
+    var displayName = User.FindFirst(AppClaims.DisplayName)?.Value ?? User.Identity?.Name ?? "";
+    var initials = string.Concat(displayName.Split(' ', '.', '_', '-', '@').Where(p => p.Length > 0).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+    var hue = (int)((uint)displayName.ToLowerInvariant().Aggregate(17, (h, c) => h * 31 + c) % 360);
+    // Sign-in, setup and error pages are a single centred card; everything else sits next to the sidebar.
+    var bare = !signedIn || ViewData["Bare"] is true;
 }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <title>@(ViewData["Title"] is string t ? t + " · " : "")Nullify.WebDav</title>
-    <link rel="icon" href="@(pathBase + StaticAssets.Url("/favicon.svg"))" type="image/svg+xml" />
-    <link rel="stylesheet" href="@(pathBase + StaticAssets.Url("/css/site.css"))" />
+    <script src="@(pathBase + "/" + StaticAssets.Url("js/theme.js"))"></script>
+    <link rel="icon" href="@(pathBase + "/" + StaticAssets.Url("favicon.svg"))" type="image/svg+xml" />
+    <link rel="stylesheet" href="@(pathBase + "/" + StaticAssets.Url("css/app.css"))" />
 </head>
 <body>
-<header class="topbar">
-    <a class="brand" href="~/">
-        @Html.Raw(DavHandler.BrandIcon)
-        <span>Nullify<b>.WebDav</b></span>
-    </a>
-    @if (signedIn)
-    {
-        <nav class="mainnav">
-            <a class="@Active("/")" asp-page="/Index">Overview</a>
-            <a href="~/dav/">Browse</a>
-            @if (isAdmin)
-            {
-                <a class="@Active("/admin/users")" asp-page="/Admin/Users/Index">Users</a>
-                <a class="@Active("/admin/mounts")" asp-page="/Admin/Mounts/Index">Mounts</a>
-                <a class="@Active("/admin/storages")" asp-page="/Admin/Storages/Index">Storage</a>
-                <a class="@Active("/admin/providers")" asp-page="/Admin/Providers/Index">Authentication</a>
-                <a class="@Active("/admin/settings")" asp-page="/Admin/Settings">Settings</a>
-            }
-        </nav>
-        <div class="usermenu">
-            <a class="@Active("/account/profile")" asp-page="/Account/Profile">@(User.FindFirst(AppClaims.DisplayName)?.Value ?? User.Identity!.Name)</a>
-            <form method="post" asp-page="/Account/Logout"><button class="link" type="submit">Sign out</button></form>
+@if (bare)
+{
+    <div class="login-page">
+        <div class="login-card @(ViewData["Wide"] is true ? "wide" : "")">
+            <div class="login-brand">
+                <div class="brand-mark">@Html.Raw(PageIcons.Get("folder", 20))</div>
+                <div>
+                    <h1>Nullify.WebDav</h1>
+                    <p>@(ViewData["Subtitle"] as string ?? "Your files, anywhere")</p>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(pm?.StatusMessage)) { <div class="alert ok">@pm.StatusMessage</div> }
+            @if (!string.IsNullOrEmpty(pm?.ErrorMessage)) { <div class="alert err">@pm.ErrorMessage</div> }
+            @RenderBody()
         </div>
-    }
-</header>
-<main class="container">
-    @if (!string.IsNullOrEmpty(pm?.StatusMessage))
-    {
-        <div class="alert ok">@pm.StatusMessage</div>
-    }
-    @if (!string.IsNullOrEmpty(pm?.ErrorMessage))
-    {
-        <div class="alert err">@pm.ErrorMessage</div>
-    }
-    @RenderBody()
-</main>
-<footer class="footer">
-    <span>Nullify.WebDav · WebDAV file server</span>
-    <a class="footer-link" href="https://github.com/simonsoanes/WebDav" target="_blank" rel="noopener noreferrer" title="Source code on GitHub">
-        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-        <span>GitHub</span>
-    </a>
-</footer>
+        <partial name="_Footer" />
+    </div>
+}
+else
+{
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <div class="brand-mark">@Html.Raw(PageIcons.Get("folder", 17))</div>
+                <div class="brand-text">Nullify<small>WebDav</small></div>
+            </div>
+            <a class="btn accent compose-btn" href="~/dav/">@Html.Raw(PageIcons.Get("folder", 16)) <span class="label">Open files</span></a>
+            <div class="folder-list">
+                <div class="nav-section">
+                    <div class="nav-label"><span>You</span></div>
+                    <a class="nav-item @Active("/")" asp-page="/Index">@Html.Raw(PageIcons.Get("plug", 17))<span class="label">Connect devices</span></a>
+                    <a class="nav-item @Active("/account/profile")" asp-page="/Account/Profile">@Html.Raw(PageIcons.Get("key", 17))<span class="label">Account &amp; app passwords</span></a>
+                </div>
+                @if (isAdmin)
+                {
+                    <div class="nav-section">
+                        <div class="nav-label"><span>Administration</span></div>
+                        <a class="nav-item @Active("/admin/users")" asp-page="/Admin/Users/Index">@Html.Raw(PageIcons.Get("users", 17))<span class="label">Users</span></a>
+                        <a class="nav-item @Active("/admin/mounts")" asp-page="/Admin/Mounts/Index">@Html.Raw(PageIcons.Get("folder", 17))<span class="label">Mounts</span></a>
+                        <a class="nav-item @Active("/admin/storages")" asp-page="/Admin/Storages/Index">@Html.Raw(PageIcons.Get("hard-drive", 17))<span class="label">Storage</span></a>
+                        <a class="nav-item @Active("/admin/shares")" asp-page="/Admin/Shares">@Html.Raw(PageIcons.Get("share", 17))<span class="label">Shares</span></a>
+                        <a class="nav-item @Active("/admin/providers")" asp-page="/Admin/Providers/Index">@Html.Raw(PageIcons.Get("shield", 17))<span class="label">Authentication</span></a>
+                        <a class="nav-item @Active("/admin/settings")" asp-page="/Admin/Settings">@Html.Raw(PageIcons.Get("settings", 17))<span class="label">Settings</span></a>
+                    </div>
+                }
+            </div>
+            <div class="user-chip">
+                <a class="avatar sm" style="--hue:@hue" asp-page="/Account/Profile" title="Account">@initials</a>
+                <span class="who">
+                    <strong title="@User.Identity!.Name">@displayName</strong>
+                    <span>@(isAdmin ? "Administrator" : "Signed in")</span>
+                </span>
+                <form method="post" asp-page="/Account/Logout">
+                    <button class="icon-btn small" type="submit" title="Sign out">@Html.Raw(PageIcons.Get("logout", 16))</button>
+                </form>
+            </div>
+        </aside>
+        <div class="splitter" role="separator" aria-orientation="vertical"></div>
+        <div class="main-area">
+            <div class="page-pane">
+                <div class="pane-toolbar show-menu" style="display:none;">
+                    <a class="icon-btn" href="#sidebar" title="Menu">@Html.Raw(PageIcons.Get("menu", 18))</a>
+                </div>
+                <main class="settings-page">
+                    @if (!string.IsNullOrEmpty(pm?.StatusMessage)) { <div class="alert ok">@pm.StatusMessage</div> }
+                    @if (!string.IsNullOrEmpty(pm?.ErrorMessage)) { <div class="alert err">@pm.ErrorMessage</div> }
+                    @RenderBody()
+                </main>
+                <partial name="_Footer" />
+            </div>
+        </div>
+    </div>
+}
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

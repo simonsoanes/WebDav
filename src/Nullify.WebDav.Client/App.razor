@@ -1,0 +1,14 @@
+@* Copyright 2026 Simon Soanes
+   SPDX-License-Identifier: Apache-2.0 *@
+<Router AppAssembly="typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" />
+    </Found>
+    <NotFound>
+        <div class="empty-state" style="height:100vh;">
+            <div class="empty-icon"><Icon Name="alert" Size="26" /></div>
+            <h3>Page not found</h3>
+            <p><a href="dav/">Back to your files</a></p>
+        </div>
+    </NotFound>
+</Router>

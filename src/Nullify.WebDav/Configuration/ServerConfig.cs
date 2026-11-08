@@ -47,6 +47,8 @@ public sealed class ServerConfig
     public List<UserConfig> Users { get; set; } = [];
     public List<StorageConfig> Storages { get; set; } = [];
     public List<MountConfig> Mounts { get; set; } = [];
+    /// <summary>Folders users shared with other users. Written by the file manager; admins can remove them.</summary>
+    public List<ShareConfig> Shares { get; set; } = [];
 }
 
 public sealed class GeneralSettings
@@ -61,6 +63,8 @@ public sealed class GeneralSettings
     public int MaxLockTimeoutMinutes { get; set; } = 1440;
     /// <summary>Accept Basic credentials over plain HTTP from non-loopback clients. Only for testing.</summary>
     public bool AllowInsecureHttp { get; set; }
+    /// <summary>Let users share folders with other users (each mount can also turn this off).</summary>
+    public bool AllowSharing { get; set; } = true;
 }
 
 public sealed class AuthProviderConfig
@@ -152,6 +156,8 @@ public sealed class MountConfig
     public bool ReadOnly { get; set; }
     /// <summary>Create the resolved folder on first access (e.g. per-user home folders).</summary>
     public bool CreateMissing { get; set; }
+    /// <summary>Users may share folders from this mount with other users.</summary>
+    public bool AllowSharing { get; set; } = true;
     /// <summary>Evaluated in order; the first rule that matches the user decides access and path.</summary>
     public List<AccessRule> Rules { get; set; } = [];
 }
@@ -164,4 +170,36 @@ public sealed class AccessRule
     public AccessLevel Access { get; set; } = AccessLevel.ReadWrite;
     /// <summary>Optional path inside the storage for the matched users, replacing the mount's default path.</summary>
     public string? Path { get; set; }
+}
+
+/// <summary>
+/// A folder one user shared with other users and groups. It is stored by storage and storage-relative path, so it
+/// follows renames, and each access re-checks that the owner can still reach it through <see cref="Mount"/>.
+/// </summary>
+public sealed class ShareConfig
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
+    /// <summary>Folder name recipients see; their URL segment is "Name (owner)".</summary>
+    public string Name { get; set; } = "";
+    public string Owner { get; set; } = "";
+    /// <summary>Provider that verified the owner, for owners that are not listed under Users.</summary>
+    public string OwnerProvider { get; set; } = "";
+    /// <summary>The owner's groups when the share was last saved; used to re-check the owner's access while they are offline.</summary>
+    public List<string> OwnerGroups { get; set; } = [];
+    /// <summary>The mount the owner shared from.</summary>
+    public string Mount { get; set; } = "";
+    public string Storage { get; set; } = "";
+    /// <summary>Path inside the storage, '/' separated.</summary>
+    public string Path { get; set; } = "";
+    public List<string> Users { get; set; } = [];
+    public List<string> Groups { get; set; } = [];
+    public AccessLevel Access { get; set; } = AccessLevel.Read;
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>The URL segment under /dav/ for recipients. Never a valid mount name, so the two cannot clash.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Segment => $"{Name} ({Owner})";
+
+    public bool IsRecipient(string username, IReadOnlySet<string> groups) =>
+        !Names.Eq(username, Owner) && (Users.Any(u => Names.Eq(u, username)) || Groups.Any(groups.Contains));
 }

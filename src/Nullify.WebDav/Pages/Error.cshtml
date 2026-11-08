@@ -2,15 +2,12 @@
 @model ErrorModel
 @{
     ViewData["Title"] = "Error";
+    ViewData["Bare"] = true;
 }
-<div class="narrow">
-    <div class="card">
-        <h1>Something went wrong</h1>
-        <p class="muted">An unexpected error occurred while processing your request.</p>
-        @if (!string.IsNullOrEmpty(Model.RequestId))
-        {
-            <p class="small muted">Request ID: <code>@Model.RequestId</code></p>
-        }
-        <a class="btn" href="~/">Back to overview</a>
-    </div>
-</div>
+<h2 style="font-size:1.05rem;margin-bottom:.35rem;">Something went wrong</h2>
+<p class="lead">An unexpected error occurred while processing your request.</p>
+@if (!string.IsNullOrEmpty(Model.RequestId))
+{
+    <p class="fine-print">Request ID: <code>@Model.RequestId</code></p>
+}
+<a class="btn block" href="~/dav/">Back to your files</a>

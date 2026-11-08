@@ -11,7 +11,13 @@ using Nullify.WebDav.Dav;
 using Nullify.WebDav.Services;
 using Nullify.WebDav.Storage;
 
-var builder = WebApplication.CreateBuilder(args);
+// A published server finds its wwwroot (the file manager) next to the executable, whatever the working directory;
+// under "dotnet run" there is none there and the project folder stays the content root.
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot")) ? AppContext.BaseDirectory : null,
+});
 var config = builder.Configuration;
 
 // Runs as a Windows service or systemd unit when started by one; a normal console app otherwise.
@@ -47,6 +53,7 @@ builder.Services.AddSingleton<ProviderRegistry>();
 builder.Services.AddSingleton<CredentialValidator>();
 builder.Services.AddSingleton<MountResolver>();
 builder.Services.AddSingleton<LockManager>();
+builder.Services.AddSingleton<ShareService>();
 
 // ------------------------------------------------------------------ Authentication (management UI)
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -62,6 +69,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.ExpireTimeSpan = TimeSpan.FromHours(12);
         o.SlidingExpiration = true;
         o.Events.OnValidatePrincipal = CookieValidation.ValidateAsync;
+        // The file manager's API answers with status codes rather than redirects to the login page.
+        o.Events.OnRedirectToLogin = ctx => ApiAwareRedirect(ctx, StatusCodes.Status401Unauthorized);
+        o.Events.OnRedirectToAccessDenied = ctx => ApiAwareRedirect(ctx, StatusCodes.Status403Forbidden);
     });
 
 builder.Services.AddAuthorizationBuilder()
@@ -141,14 +151,23 @@ app.MapWhen(ctx => ctx.Request.Path == "/" && ctx.Request.Method is "PROPFIND" o
     a => a.Run(DavHandler.HandleServerRootAsync));
 app.Map("/dav", dav => dav.Run(DavHandler.HandleAsync));
 
+// The file manager (Blazor WebAssembly), its stylesheet and scripts; the Razor pages share the stylesheet.
 app.MapStaticAssets();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapRazorPages();
+app.MapFileApi();
 
 app.Run();
+
+static Task ApiAwareRedirect(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx, int status)
+{
+    if (ctx.Request.Path.StartsWithSegments("/api")) ctx.Response.StatusCode = status;
+    else ctx.Response.Redirect(ctx.RedirectUri);
+    return Task.CompletedTask;
+}
 
 public partial class Program;
 

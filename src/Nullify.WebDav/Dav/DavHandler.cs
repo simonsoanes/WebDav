@@ -31,8 +31,10 @@ public sealed partial class DavHandler
     private readonly LockManager _locks;
     private readonly ServerConfig _config;
     private readonly ILogger _log;
+    private readonly bool _viaCookie;
     private IfHeader? _if;
 
+    private ShareService Shares => _http.RequestServices.GetRequiredService<ShareService>();
     private HttpRequest Request => _http.Request;
     private HttpResponse Response => _http.Response;
     private CancellationToken Ct => _http.RequestAborted;
@@ -40,10 +42,11 @@ public sealed partial class DavHandler
     /// <summary>Escaped URL prefix of the DAV root, e.g. "/dav".</summary>
     private readonly string _base;
 
-    private DavHandler(HttpContext http, DavPrincipal user)
+    private DavHandler(HttpContext http, DavPrincipal user, bool viaCookie)
     {
         _http = http;
         _user = user;
+        _viaCookie = viaCookie;
         var services = http.RequestServices;
         _mounts = services.GetRequiredService<MountResolver>();
         _locks = services.GetRequiredService<LockManager>();
@@ -94,15 +97,22 @@ public sealed partial class DavHandler
             return;
         }
 
-        var user = await AuthenticateAsync(http, services.GetRequiredService<CredentialValidator>());
+        var (user, viaCookie) = await AuthenticateAsync(http, services.GetRequiredService<CredentialValidator>());
         if (user == null)
         {
+            if (!serverRoot && IsBrowserNavigation(http.Request) && !http.Request.Headers.ContainsKey("Authorization"))
+            {
+                // A person opening a /dav/ link in a browser signs in on the login page rather than in a Basic prompt.
+                var appBase = AppBase(http.Request.PathBase.Value);
+                http.Response.Redirect(appBase + "/account/login?ReturnUrl=" + Uri.EscapeDataString((http.Request.PathBase + http.Request.Path).ToUriComponent()));
+                return;
+            }
             http.Response.StatusCode = StatusCodes.Status401Unauthorized;
             http.Response.Headers.WWWAuthenticate = $"Basic realm=\"{Realm}\", charset=\"UTF-8\"";
             return;
         }
 
-        var handler = new DavHandler(http, user);
+        var handler = new DavHandler(http, user, viaCookie);
         try
         {
             if (serverRoot)
@@ -115,7 +125,9 @@ public sealed partial class DavHandler
             {
                 if (!OperatingSystem.IsWindows() || !user.CanImpersonate)
                     throw new DavException(StatusCodes.Status403Forbidden,
-                        message: "This folder is accessed as your Windows account: sign in with your Windows password (not an app password).");
+                        message: viaCookie
+                            ? "This folder is accessed as your Windows account, which the web browser cannot do. Connect to it with a WebDAV client."
+                            : "This folder is accessed as your Windows account: sign in with your Windows password (not an app password).");
                 await WindowsIdentity.RunImpersonatedAsync(user.WindowsToken!, () => handler.DispatchAsync(target));
             }
             else
@@ -167,30 +179,58 @@ public sealed partial class DavHandler
         await http.Response.WriteAsync(message, http.RequestAborted);
     }
 
-    private static async Task<DavPrincipal?> AuthenticateAsync(HttpContext http, CredentialValidator validator)
+    private static async Task<(DavPrincipal? User, bool ViaCookie)> AuthenticateAsync(HttpContext http, CredentialValidator validator)
     {
         var header = http.Request.Headers.Authorization.ToString();
         if (header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
         {
             byte[] bytes;
             try { bytes = Convert.FromBase64String(header[6..].Trim()); }
-            catch (FormatException) { return null; }
+            catch (FormatException) { return (null, false); }
             // Most clients send UTF-8; older Windows clients use the ANSI code page.
             var decoded = Encoding.UTF8.GetString(bytes);
             if (decoded.Contains('�')) decoded = Encoding.Latin1.GetString(bytes);
             var colon = decoded.IndexOf(':');
-            if (colon <= 0) return null;
+            if (colon <= 0) return (null, false);
             var clientKey = "dav:" + (http.Connection.RemoteIpAddress?.ToString() ?? "unknown");
-            return await validator.ValidateAsync(decoded[..colon], decoded[(colon + 1)..], clientKey, LoginPurpose.Dav, http.RequestAborted);
+            return (await validator.ValidateAsync(decoded[..colon], decoded[(colon + 1)..], clientKey, LoginPurpose.Dav, http.RequestAborted), false);
         }
 
-        // A signed-in browser may read (download and list) without a second prompt; changes need Basic credentials.
-        if (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method))
+        // A signed-in browser may read (open links, download); the file manager may also change things, because its
+        // requests carry a header that a cross-site page cannot send without a CORS preflight, which is never granted.
+        if (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method) || IsFileManagerRequest(http.Request))
         {
             var result = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            if (result.Succeeded) return DavPrincipal.FromClaims(result.Principal!);
+            if (result.Succeeded) return (DavPrincipal.FromClaims(result.Principal!), true);
         }
-        return null;
+        return (null, false);
+    }
+
+    /// <summary>A same-origin request from the browser file manager (see <see cref="Shared.ApiHeaders"/>).</summary>
+    public static bool IsFileManagerRequest(HttpRequest request)
+    {
+        if (request.Headers[Shared.ApiHeaders.Request] != Shared.ApiHeaders.RequestValue) return false;
+        var site = request.Headers["Sec-Fetch-Site"].ToString();
+        if (site.Length > 0 && site != "same-origin") return false;
+        var origin = request.Headers.Origin.ToString();
+        return origin.Length == 0 || origin.Equals($"{request.Scheme}://{request.Host}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A person navigating a browser tab, as opposed to a WebDAV client fetching a file.</summary>
+    private static bool IsBrowserNavigation(HttpRequest request)
+    {
+        if (!HttpMethods.IsGet(request.Method)) return false;
+        var dest = request.Headers["Sec-Fetch-Dest"].ToString();
+        if (dest.Length > 0) return dest == "document";
+        return request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase) &&
+               request.Headers.UserAgent.ToString().StartsWith("Mozilla/", StringComparison.Ordinal);
+    }
+
+    /// <summary>The application's base path (the DAV path base without "/dav").</summary>
+    private static string AppBase(string? davPathBase)
+    {
+        var b = (davPathBase ?? "").TrimEnd('/');
+        return b.EndsWith("/dav", StringComparison.OrdinalIgnoreCase) ? b[..^4] : b;
     }
 
     // ------------------------------------------------------------------ URL handling
@@ -307,6 +347,7 @@ public sealed partial class DavHandler
     private void EnsureMountFolder(MountAccess mount)
     {
         if (Directory.Exists(mount.BasePath)) return;
+        if (mount.Share != null) throw new DavException(StatusCodes.Status404NotFound, message: "The shared folder no longer exists.");
         if (!mount.Mount.CreateMissing || mount.Storage.ReadOnly)
             throw new DavException(StatusCodes.Status404NotFound, message: "The folder for this mount does not exist.");
         if (!Directory.Exists(mount.Storage.Root))

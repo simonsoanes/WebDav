@@ -67,7 +67,6 @@ public class SetupModel(ConfigStore store, IConfiguration config) : AppPageModel
         };
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
             principal.ToClaimsPrincipal(CookieAuthenticationDefaults.AuthenticationScheme));
-        StatusMessage = "Welcome! Your administrator account has been created.";
-        return RedirectToPage("/Index");
+        return LocalRedirect("~/dav/");
     }
 }

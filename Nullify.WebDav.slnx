@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Nullify.WebDav/Nullify.WebDav.csproj" />
+    <Project Path="src/Nullify.WebDav.Client/Nullify.WebDav.Client.csproj" />
+    <Project Path="src/Nullify.WebDav.Shared/Nullify.WebDav.Shared.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nullify.WebDav.Tests/Nullify.WebDav.Tests.csproj" />

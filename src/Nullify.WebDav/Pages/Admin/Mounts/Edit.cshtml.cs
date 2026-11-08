@@ -26,6 +26,7 @@ public class EditModel(ConfigStore store) : AppPageModel
     [BindProperty] public string MountPath { get; set; } = "";
     [BindProperty] public bool ReadOnly { get; set; }
     [BindProperty] public bool CreateMissing { get; set; }
+    [BindProperty] public bool AllowSharing { get; set; }
     [BindProperty] public bool IsDefault { get; set; }
     [BindProperty] public List<RuleRow> Rules { get; set; } = [];
 
@@ -57,6 +58,7 @@ public class EditModel(ConfigStore store) : AppPageModel
             MountPath = Existing.Path;
             ReadOnly = Existing.ReadOnly;
             CreateMissing = Existing.CreateMissing;
+            AllowSharing = Existing.AllowSharing;
             IsDefault = Names.Eq(store.Current.Settings.DefaultMount, Existing.Name);
             Rules = Existing.Rules.Select((r, i) => new RuleRow
             {
@@ -66,6 +68,7 @@ public class EditModel(ConfigStore store) : AppPageModel
         else
         {
             CreateMissing = true;
+            AllowSharing = true;
             Storage = StorageNames.FirstOrDefault() ?? "";
         }
         AddBlankRows();
@@ -109,6 +112,7 @@ public class EditModel(ConfigStore store) : AppPageModel
             m.Path = MountPath.Trim().Trim('/', '\\');
             m.ReadOnly = ReadOnly;
             m.CreateMissing = CreateMissing;
+            m.AllowSharing = AllowSharing;
             m.Rules = rules;
             if (IsDefault) c.Settings.DefaultMount = name;
             else if (Names.Eq(c.Settings.DefaultMount, name)) c.Settings.DefaultMount = "";

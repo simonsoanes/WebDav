@@ -13,6 +13,7 @@ public class IndexModel(MountResolver mounts, ConfigStore store) : AppPageModel
     public string DisplayName { get; private set; } = "";
     public string Username { get; private set; } = "";
     public List<MountRow> Mounts { get; } = [];
+    public List<MountRow> Shared { get; } = [];
     public MountRow? Default { get; private set; }
     public bool NeedsWindowsPassword { get; private set; }
     public bool AppPasswordsAvailable { get; private set; }
@@ -30,6 +31,8 @@ public class IndexModel(MountResolver mounts, ConfigStore store) : AppPageModel
             Mounts.Add(row);
             if (isDefault) Default = row with { Url = DavUrl + "~/" };
         }
+        foreach (var s in mounts.SharesFor(me))
+            Shared.Add(new MountRow(s.Name, $"Shared by {s.Share!.Owner}", DavUrl + Uri.EscapeDataString(s.Name) + "/", s.CanWrite, false, false));
         NeedsWindowsPassword = Mounts.Any(m => m.Impersonated);
         AppPasswordsAvailable = me.Listed && store.Current.Settings.AllowAppPasswords;
     }

@@ -18,7 +18,11 @@ public class LoginModel(CredentialValidator credentials, ConfigStore store) : Ap
 
     public bool HasProviders => store.Current.AuthProviders.Any(p => p.Enabled);
 
-    public IActionResult OnGet() => User.Identity?.IsAuthenticated == true ? LocalRedirectSafe(ReturnUrl) : Page();
+    public IActionResult OnGet() => User.Identity?.IsAuthenticated == true ? Landing() : Page();
+
+    /// <summary>Where the user asked to go, else straight to their files.</summary>
+    private IActionResult Landing() =>
+        !string.IsNullOrEmpty(ReturnUrl) && Url.IsLocalUrl(ReturnUrl) && ReturnUrl != "/" ? LocalRedirect(ReturnUrl) : LocalRedirect("~/dav/");
 
     public async Task<IActionResult> OnPostAsync()
     {
@@ -38,6 +42,6 @@ public class LoginModel(CredentialValidator credentials, ConfigStore store) : Ap
 
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
             principal.ToClaimsPrincipal(CookieAuthenticationDefaults.AuthenticationScheme));
-        return LocalRedirectSafe(ReturnUrl);
+        return Landing();
     }
 }

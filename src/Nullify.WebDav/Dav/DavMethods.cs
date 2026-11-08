@@ -27,8 +27,8 @@ public sealed partial class DavHandler
     {
         if (t.IsRoot || Directory.Exists(t.Physical))
         {
-            if (!_config.Settings.BrowserListing) throw new DavException(StatusCodes.Status405MethodNotAllowed, message: "Folder listings are disabled.");
-            await WriteListingAsync(t, head);
+            if (!_config.Settings.BrowserListing) throw new DavException(StatusCodes.Status405MethodNotAllowed, message: "The web file manager is disabled.");
+            await WriteFileManagerAsync(head);
             return;
         }
         var file = new FileInfo(t.Physical);
@@ -255,6 +255,7 @@ public sealed partial class DavHandler
             }
         }
         _locks.RemoveWithin(t.Physical);
+        if (isDir) await Shares.OnDeletedAsync(t.Mount!, t.Segments);
         Response.StatusCode = StatusCodes.Status204NoContent;
     }
 
@@ -320,7 +321,7 @@ public sealed partial class DavHandler
 
     // ------------------------------------------------------------------ COPY / MOVE
 
-    private Task CopyMoveAsync(DavTarget src, bool move)
+    private async Task CopyMoveAsync(DavTarget src, bool move)
     {
         if (src.IsRoot || move && src.IsMountRoot) throw new DavException(StatusCodes.Status403Forbidden);
         if (move) RequireWrite(src);
@@ -370,12 +371,14 @@ public sealed partial class DavHandler
             }
             else DeleteFile(new FileInfo(dst.Physical));
             _locks.RemoveWithin(dst.Physical);
+            await Shares.OnDeletedAsync(dst.Mount, dst.Segments);
         }
 
         if (move)
         {
             MoveEntry(src.Physical, dst.Physical, srcIsDir, caseRename, src.Mount.Storage);
             _locks.RemoveWithin(src.Physical);
+            if (srcIsDir) await Shares.OnMovedAsync(src.Mount, src.Segments, dst.Mount, dst.Segments);
         }
         else if (srcIsDir)
         {
@@ -387,7 +390,6 @@ public sealed partial class DavHandler
         }
 
         Response.StatusCode = dstExists ? StatusCodes.Status204NoContent : StatusCodes.Status201Created;
-        return Task.CompletedTask;
     }
 
     private static void MoveEntry(string from, string to, bool isDir, bool caseRename, StorageConfig storage)

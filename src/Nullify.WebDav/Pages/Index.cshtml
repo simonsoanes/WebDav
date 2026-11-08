@@ -1,18 +1,22 @@
 @page
 @model IndexModel
 @{
-    ViewData["Title"] = "Overview";
+    ViewData["Title"] = "Connect devices";
     var first = Model.Default ?? Model.Mounts.FirstOrDefault();
 }
 <div class="page-head">
     <div>
-        <h1>Hello, @Model.DisplayName</h1>
-        <p>Connect your devices using the details below.</p>
+        <h1>Connect your devices</h1>
+        <p>Hello, @Model.DisplayName. Use these details in Windows Explorer, macOS Finder, Linux file managers, rclone or any WebDAV app.</p>
     </div>
+    <a class="btn accent" href="~/dav/">@Html.Raw(PageIcons.Get("folder", 16)) Open files</a>
 </div>
 
 <div class="card">
-    <h2>Connection details</h2>
+    <div class="card-head">
+        <div class="icon-tile">@Html.Raw(PageIcons.Get("plug", 18))</div>
+        <div><h2 style="margin:0;">Connection details</h2><p>The same addresses open the file manager in a browser.</p></div>
+    </div>
     <dl class="kv">
         <dt>Server URL</dt>
         <dd><code>@Model.DavUrl</code> <span class="muted small">all your folders</span></dd>
@@ -43,7 +47,7 @@
     {
         <details style="margin-top:1rem">
             <summary>Client setup</summary>
-            <ul class="small tips">
+            <ul class="tips">
                 <li><b>Windows Explorer:</b> <i>This PC → Map network drive</i>, folder <code>@Model.UncPath(first.Url)</code>, or from a command prompt:
                     <code>net use * "@first.Url" /user:@Model.Username</code>. Uploads above 50 MB need the <code>FileSizeLimitInBytes</code> setting of the WebClient service raised.</li>
                 <li><b>macOS Finder:</b> <i>Go → Connect to Server</i> (⌘K) and enter <code>@first.Url</code>.</li>
@@ -55,8 +59,11 @@
 </div>
 
 <div class="card">
-    <h2>Your folders</h2>
-    @if (Model.Mounts.Count == 0)
+    <div class="card-head">
+        <div class="icon-tile">@Html.Raw(PageIcons.Get("folder", 18))</div>
+        <div><h2 style="margin:0;">Your folders</h2><p>Each one is also a separate address you can connect to.</p></div>
+    </div>
+    @if (Model.Mounts.Count == 0 && Model.Shared.Count == 0)
     {
         <p class="empty">You do not have access to any folders yet. Ask your administrator.</p>
     }
@@ -65,7 +72,7 @@
         <table>
             <thead><tr><th>Folder</th><th>Access</th><th>Address</th><th></th></tr></thead>
             <tbody>
-            @foreach (var m in Model.Mounts)
+            @foreach (var m in Model.Mounts.Concat(Model.Shared))
             {
                 <tr>
                     <td>
@@ -77,7 +84,7 @@
                     <td>@(m.CanWrite ? "Read & write" : "Read only")</td>
                     <td class="small"><code>@m.Url</code></td>
                     <td class="actions">
-                        @if (!m.Impersonated) { <a class="btn small" href="@m.Url">Browse</a> }
+                        @if (!m.Impersonated) { <a class="btn small" href="@m.Url">Open</a> }
                     </td>
                 </tr>
             }

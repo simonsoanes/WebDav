@@ -16,6 +16,7 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
     [BindProperty] public long MaxUploadMegabytes { get; set; }
     [BindProperty] public int MaxLockTimeoutMinutes { get; set; }
     [BindProperty] public bool AllowInsecureHttp { get; set; }
+    [BindProperty] public bool AllowSharing { get; set; }
     [BindProperty] public string RawConfig { get; set; } = "";
 
     public List<string> MountNames { get; private set; } = [];
@@ -34,6 +35,7 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
         MaxUploadMegabytes = c.Settings.MaxUploadMegabytes;
         MaxLockTimeoutMinutes = c.Settings.MaxLockTimeoutMinutes;
         AllowInsecureHttp = c.Settings.AllowInsecureHttp;
+        AllowSharing = c.Settings.AllowSharing;
         RawConfig = ConfigStore.Serialize(c);
     }
 
@@ -49,6 +51,7 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
             c.Settings.MaxUploadMegabytes = MaxUploadMegabytes;
             c.Settings.MaxLockTimeoutMinutes = MaxLockTimeoutMinutes;
             c.Settings.AllowInsecureHttp = AllowInsecureHttp;
+            c.Settings.AllowSharing = AllowSharing;
         });
         if (errors.Count > 0)
         {
@@ -78,6 +81,7 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
             MaxUploadMegabytes = c.Settings.MaxUploadMegabytes;
             MaxLockTimeoutMinutes = c.Settings.MaxLockTimeoutMinutes;
             AllowInsecureHttp = c.Settings.AllowInsecureHttp;
+        AllowSharing = c.Settings.AllowSharing;
             return Page();
         }
         StatusMessage = "Configuration saved.";

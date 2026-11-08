@@ -23,10 +23,19 @@
     <InternalsVisibleTo Include="Nullify.WebDav.Tests" />
   </ItemGroup>
 
-  <!-- Static assets are embedded so a single-file publish needs no wwwroot folder next to it. -->
+  <!-- The local development data folder (configuration, key ring, files) is never part of a build or publish. -->
   <ItemGroup>
-    <Content Remove="wwwroot\**" />
-    <EmbeddedResource Include="wwwroot\**" LogicalName="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Remove="data\**" />
+    <None Remove="data\**" />
+  </ItemGroup>
+
+  <!-- The browser file manager (Blazor WebAssembly). Its files, the stylesheet and scripts are served by MapStaticAssets
+       from the wwwroot folder that publishing puts next to the server. -->
+  <ItemGroup>
+    <!-- Server publish options (single file, runtime) must not reach the WebAssembly build. -->
+    <ProjectReference Include="..\Nullify.WebDav.Client\Nullify.WebDav.Client.csproj"
+                      GlobalPropertiesToRemove="PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier;UseAppHost" />
+    <ProjectReference Include="..\Nullify.WebDav.Shared\Nullify.WebDav.Shared.csproj" />
   </ItemGroup>
 
 </Project>

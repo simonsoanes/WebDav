@@ -1,12 +1,8 @@
 @page
 @{
     ViewData["Title"] = "Access denied";
+    ViewData["Bare"] = true;
 }
-
-<div class="narrow">
-    <div class="card">
-        <h1>Access denied</h1>
-        <p class="muted">You do not have permission to view this page.</p>
-        <a class="btn" href="~/">Back to overview</a>
-    </div>
-</div>
+<h2 style="font-size:1.05rem;margin-bottom:.35rem;">Access denied</h2>
+<p class="lead">You do not have permission to view this page.</p>
+<a class="btn block" href="~/dav/">Back to your files</a>

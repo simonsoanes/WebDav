@@ -3,10 +3,7 @@
 @{
     ViewData["Title"] = "Sign in";
 }
-<div class="narrow">
-    <div class="card">
-        <h1>Sign in</h1>
-        <p class="muted">See your folders and connection details, and manage app passwords.</p>
+<p class="lead">Sign in to open your files, share folders and get connection details for your devices.</p>
         <partial name="_ValidationSummary" />
         <form method="post" class="stack">
             <input type="hidden" asp-for="ReturnUrl" />
@@ -24,5 +21,3 @@
             </div>
             <button class="primary block" type="submit">Sign in</button>
         </form>
-    </div>
-</div>

@@ -77,7 +77,7 @@ public sealed partial class DavHandler
         FileSystemInfo info = Directory.Exists(t.Physical) ? new DirectoryInfo(t.Physical) : new FileInfo(t.Physical);
         if (!info.Exists) throw new DavException(StatusCodes.Status404NotFound);
         var isDir = info is DirectoryInfo;
-        var name = t.Segments.Length == 0 ? t.Mount!.Mount.Name : t.Segments[^1];
+        var name = t.Segments.Length == 0 ? t.Mount!.Name : t.Segments[^1];
         return new DavItem(Href(t, isDir), name, isDir, info, t.Mount, t.Physical);
     }
 
@@ -86,8 +86,8 @@ public sealed partial class DavHandler
         if (t.IsRoot)
         {
             // Mounts are virtual at this level: listing them never touches their (possibly impersonated) storage.
-            foreach (var m in _mounts.MountsFor(_user))
-                yield return new DavItem(HrefFor(m.Mount.Name, [], true), m.Mount.Name, true, null, m, null);
+            foreach (var m in _mounts.EntriesFor(_user))
+                yield return new DavItem(HrefFor(m.Name, [], true), m.Name, true, null, m, null);
             yield break;
         }
         foreach (var entry in Children((DirectoryInfo)self.Info!, t.Mount!.Storage))

@@ -1,0 +1,139 @@
+@* Copyright 2026 Simon Soanes
+   SPDX-License-Identifier: Apache-2.0 *@
+@inject DavClient Dav
+@inject IJSRuntime JS
+
+@* A plain text editor for small files. Saves with If-Match, so it never silently overwrites someone else's change. *@
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-label="@Name" @onclick:stopPropagation="true" @onkeydown="OnKey" @onkeydown:preventDefault="preventKey">
+        <div class="modal-head">
+            <Icon Name="file-code" Size="18" />
+            <h3 style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">@Name</h3>
+            @if (ReadOnly) { <span class="badge">read only</span> }
+            else if (dirty) { <span class="badge accent">unsaved</span> }
+            <a class="icon-btn" href="@Url" download="@Name" title="Download"><Icon Name="download" Size="17" /></a>
+            <button class="icon-btn" @onclick="Close" title="Close (Esc)"><Icon Name="x" /></button>
+        </div>
+        <div class="editor-area">
+            @if (error != null)
+            {
+                <div class="alert err" style="width:100%;"><Icon Name="alert" Size="15" /><div>@error</div></div>
+            }
+            else if (text == null)
+            {
+                <div class="boot inline" style="width:100%;"><span class="spinner"></span> Loading…</div>
+            }
+            else
+            {
+                <textarea @ref="area" value="@text" @oninput="Changed" readonly="@ReadOnly" spellcheck="false" aria-label="Contents of @Name"></textarea>
+            }
+        </div>
+        <div class="modal-foot">
+            <span class="status">@status</span>
+            <span class="spacer"></span>
+            <button class="btn" @onclick="Close">@(dirty ? "Discard" : "Close")</button>
+            @if (!ReadOnly)
+            {
+                <button class="btn accent" @onclick="Save" disabled="@(saving || text == null || !dirty)">@(saving ? "Saving…" : "Save")</button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Url { get; set; } = "";
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public long? Size { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
+
+    private const long MaxBytes = 5 * 1024 * 1024;
+
+    private string? text;
+    private string? etag;
+    private string? error;
+    private string status = "";
+    private bool dirty, saving, saved, preventKey, focus;
+    private ElementReference area;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Size > MaxBytes)
+        {
+            error = "This file is too large to edit here. Download it instead.";
+            return;
+        }
+        try
+        {
+            (text, etag) = await Dav.ReadTextAsync(Url);
+            status = ReadOnly ? "You can view this file but not change it." : "Ctrl+S saves.";
+            focus = true;
+        }
+        catch (Exception ex) when (ex is DavException or HttpRequestException)
+        {
+            error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focus) return;
+        focus = false;
+        try { await JS.InvokeVoidAsync("nullifyFiles.focus", area); } catch (JSException) { }
+    }
+
+    private void Changed(ChangeEventArgs e)
+    {
+        text = e.Value as string ?? "";
+        dirty = true;
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        preventKey = false;
+        if ((e.CtrlKey || e.MetaKey) && e.Key is "s" or "S")
+        {
+            preventKey = true;
+            if (!ReadOnly && dirty) await Save();
+        }
+        else if (e.Key == "Escape") await Close();
+    }
+
+    private async Task Save()
+    {
+        if (text == null) return;
+        saving = true;
+        try
+        {
+            etag = await Dav.SaveTextAsync(Url, text, etag);
+            dirty = false;
+            saved = true;
+            status = $"Saved at {DateTime.Now:HH:mm:ss}.";
+        }
+        catch (DavException ex) when (ex.Status == System.Net.HttpStatusCode.PreconditionFailed)
+        {
+            if (await JS.InvokeAsync<bool>("nullifyFiles.confirm", "Someone else changed this file since you opened it. Save your version over theirs?"))
+            {
+                etag = null;
+                saving = false;
+                await Save();
+                return;
+            }
+            status = "Not saved.";
+        }
+        catch (Exception ex) when (ex is DavException or HttpRequestException)
+        {
+            status = "Not saved: " + ex.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        if (dirty && !await JS.InvokeAsync<bool>("nullifyFiles.confirm", "Discard your unsaved changes?")) return;
+        await OnClose.InvokeAsync(saved);
+    }
+}

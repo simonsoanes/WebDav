@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!-- The browser file manager. The server hosts its files; it talks to the server over WebDAV plus a small JSON API. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <BlazorEnableTimeZoneSupport>true</BlazorEnableTimeZoneSupport>
+    <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
+    <Authors>Simon Soanes</Authors>
+    <Copyright>Copyright 2026 Simon Soanes</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nullify.WebDav.Shared\Nullify.WebDav.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

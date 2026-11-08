@@ -8,8 +8,9 @@ A self-hosted, multi-user **WebDAV file server** built on .NET 10 with no third-
 - **Default folder** per user and server-wide, always reachable at `/dav/~/`
 - **Authentication**: local PBKDF2 passwords, **Windows** (`LogonUser`, local or domain), **PAM**, **LDAP** simple bind (Active Directory, OpenLDAP, FreeIPA, Samba), **IMAP**; per-device **app passwords**; optionally accept **unlisted accounts** that a provider verifies, with **operating system groups**
 - **Windows impersonation**: storage can be accessed with the user's own Windows token, including UNC shares on another file server
-- **Web management UI** with first-run admin setup, users, mounts and rules, storage, providers (with a *test sign-in* tool), settings, active locks and a validated raw JSON editor
-- Browser **folder listings** for quick read-only access
+- **Web file manager** (Blazor WebAssembly) at the same `/dav/` URLs: upload with progress (files and whole folders), drag and drop from the desktop and between folders, right-click menus, cut/copy/paste, rename, new folders and text files with a built-in editor, keyboard shortcuts; WebDAV clients keep working on the very same addresses
+- **Folder sharing** between users: share a folder with people or groups, read-only or read & write; it appears under *Shared with me* and as a folder in their WebDAV connection, follows renames and can never grant more than the owner has
+- **Web management UI** in the Nullify.WebMail style: connection details for every device, app passwords, first-run admin setup, users, mounts and rules, storage, shares, providers (with a *test sign-in* tool), settings, active locks and a validated raw JSON editor
 - **Easy deployment**: Docker + Caddy, a self-contained single-file executable, a **Windows service** installer or a hardened **systemd** unit
 - Configuration is **one JSON file**, editable in the UI or by hand (reloaded automatically, validated before use); no database
 
@@ -20,7 +21,7 @@ cp .env.example .env        # set DAV_HOST (and FILES_PATH)
 docker compose up -d --build
 ```
 
-The compose file runs the app and [Caddy](https://caddyserver.com) with automatic HTTPS ([Caddyfile](Caddyfile)). The app port is not published; only Caddy listens on 80/443. Open `https://<DAV_HOST>/`; on first start you are redirected to **/setup** to create the first administrator. Set `SETUP_TOKEN` in `.env` if the server is reachable before you finish setup.
+The compose file runs the app and [Caddy](https://caddyserver.com) with automatic HTTPS ([Caddyfile](Caddyfile)). The app port is not published; only Caddy listens on 80/443. Open `https://<DAV_HOST>/`; on first start you are redirected to **/setup** to create the first administrator. Signing in opens the file manager; *Connect devices* in its sidebar has the addresses for WebDAV clients. Set `SETUP_TOKEN` in `.env` if the server is reachable before you finish setup.
 
 - The `webdav-data` volume holds `nullify-webdav.json` (the configuration) and `keys/` (the key ring protecting sign-in cookies). Back both up.
 - `FILES_PATH` (default `./files`) is mounted at `/files`, the root of the default `files` storage. It must be writable by UID 1654, the image's non-root `app` user.
@@ -55,6 +56,8 @@ install -d -o nullify-webdav -g nullify-webdav -m 750 /var/lib/nullify-webdav /s
 cp deploy/nullify-webdav.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now nullify-webdav
 ```
+
+The publish folder holds the executable and a `wwwroot` folder (the web file manager and stylesheet); keep them together.
 
 The unit ([deploy/nullify-webdav.service](deploy/nullify-webdav.service)) listens on `127.0.0.1:8080` for a local reverse proxy, uses `Type=notify` and is sandboxed (`ProtectSystem=strict`, writable paths limited to the data directory and `/srv/webdav`; add further storage roots to `ReadWritePaths`). For PAM authentication see [PAM](#pam).
 
@@ -179,13 +182,35 @@ With *Access files as the signed-in Windows user* on a storage, each request run
 | rclone | `rclone config` → WebDAV, vendor *Other*, URL `https://files.example.com/dav/`. Modification times are kept via `X-OC-Mtime`. |
 | Cyberduck, WinSCP, mobile apps | WebDAV (HTTPS), server `files.example.com`, path `/dav/~/` |
 
-Each user's overview page shows their own URLs and the matching commands.
+Each user's *Connect devices* page shows their own URLs and the matching commands.
+
+## Web file manager
+
+Opening any folder under `/dav/` in a browser shows the file manager for that folder, so links can be bookmarked and shared and the address bar always holds the folder's WebDAV URL. Signing in lands on the user's default folder. It is a Blazor WebAssembly app served by the same process; it reads and writes through the WebDAV endpoint itself and uses a small JSON API (`/api/session`, `/api/shares`, `/api/people`) for what WebDAV cannot express.
+
+- **Upload** with the *Upload* button, *Upload folder*, or by dragging files and folders from the desktop onto the window or onto a folder row. Uploads stream straight from the browser (`XMLHttpRequest`, with a progress bar and *Cancel*), keep the files' modification times and never overwrite without asking.
+- **Move** by dragging items onto a folder, a breadcrumb or a folder in the sidebar; hold Ctrl (or ⌥) to copy. Cut, copy and paste work across folders and mounts.
+- **Right-click** an item or the empty space for its menu; *More* (⋯) on a row opens the same menu on touch devices.
+- **Text files** (`.txt`, `.md`, `.json`, source code and similar, up to 5 MB) open in an editor; saving uses `If-Match`, so a change someone else made in the meantime is never silently overwritten. Other files open in a new tab, sandboxed by the download CSP.
+- Keys: <kbd>Del</kbd> delete, <kbd>F2</kbd> rename, <kbd>Enter</kbd> open, <kbd>Backspace</kbd> up, <kbd>Ctrl</kbd>+<kbd>A</kbd>/<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd>, arrow keys (with Shift to extend), <kbd>Ctrl</kbd>+<kbd>S</kbd> in the editor.
+- Folders on storage with Windows impersonation are listed but not opened in the browser (a browser session carries no Windows token); use a WebDAV client for those.
+- Turning off *Web file manager* in *Settings* serves no HTML for folders at all.
+
+## Sharing
+
+Right-click a folder (or use *Share folder* in the toolbar) to share it with people and groups, either **view** (open, download, copy) or **edit**. Recipients find it under *Shared with me* and, for WebDAV clients, as a folder named `Name (owner)` next to their mounts at `/dav/`. *Shared by me* lists your shares; administrators see and can remove every share under *Administration → Shares*.
+
+- A share never grants more than its owner has: every request re-checks that the owner can still reach the folder through the mount it was shared from (with write access for edit shares), that the owner still exists and is enabled, and that sharing is allowed. Remove the owner's access and the share stops working at once. (For owners who are not listed under *Users*, group memberships are those they had when they last saved the share.)
+- Sharing can be turned off server-wide (*Settings*) or per mount (*Users may share folders from it*). Folders on impersonated storage, and folders that were shared with you, cannot be shared.
+- Shares are stored in the configuration file by storage path, so renaming or moving the folder (through WebDAV or the file manager) keeps them working; deleting it removes them.
+- The people picker lists enabled listed users and the groups named in the configuration; accounts accepted through *accept unlisted accounts* and other groups can be typed in.
 
 ## Security notes
 
 - **Path handling**: every URL segment is validated (no `.`/`..`, separators, control characters; on Windows also no `:` streams, reserved device names or trailing dots/spaces), the combined path must stay inside the storage root, and links are not followed by default (and are hidden from listings).
 - **Uploads** go to a temporary file in the target folder and replace the target only when complete, so a failed upload never leaves a truncated file. Optional size limit; uploads that would not fit get `507`.
-- **Downloads** are served with `Content-Security-Policy: sandbox` and `nosniff`: an uploaded HTML or SVG file cannot run script in the server's origin. Browser sessions may only read through `/dav/`; every change needs Basic credentials, and WebDAV methods cannot be sent cross-site without a CORS preflight, which the server never grants.
+- **Downloads** are served with `Content-Security-Policy: sandbox` and `nosniff`: an uploaded HTML or SVG file cannot run script in the server's origin. A browser session alone may only read through `/dav/`. Changes with a session (the file manager) also need the `X-Nullify-Request` header, a same-origin `Sec-Fetch-Site` and a matching `Origin` when present; a custom header cannot be sent cross-site without a CORS preflight, which the server never grants. The same applies to every `/api` call, including reads.
+- The file manager page has its own CSP: scripts only from the server itself plus `'wasm-unsafe-eval'` for WebAssembly, no inline scripts.
 - **Locks** are owned by the user who created them; tokens of other users are rejected. Administrators can release stale locks under *Settings*. Locks are kept in memory and cleared by a restart.
 - The management UI uses cookie authentication (`HttpOnly`, `Secure`, `SameSite=Lax`, 12-hour sliding expiry), antiforgery tokens, CSP, `X-Frame-Options: DENY` and HSTS.
 - The configuration file contains password hashes, never passwords. LDAP and IMAP providers bind with the user's own credentials, so there are no service-account secrets to store.
@@ -218,17 +243,19 @@ dotnet test        # unit + integration tests (fake LDAP and IMAP servers includ
 
 ```
 src/Nullify.WebDav
-├── Dav/            WebDAV protocol: handler, methods, properties, locks and If header, HTML listings
-├── Storage/        Path validation and mount/rule resolution
+├── Dav/            WebDAV protocol: handler, methods, properties, locks and If header, file manager host page
+├── Storage/        Path validation, mount/rule resolution, folder shares
 ├── Auth/           Credential validation, password hashing, Windows/PAM/LDAP/IMAP providers
 ├── Configuration/  Configuration model, validation, file store with hot reload
-├── Services/       Setup gate, cookie validation, embedded static assets
+├── Services/       Setup gate, cookie validation, the file manager's JSON API
 └── Pages/          Razor Pages management UI
+src/Nullify.WebDav.Client   Blazor WebAssembly file manager, stylesheet and scripts (wwwroot)
+src/Nullify.WebDav.Shared   API contracts shared by server and client
 ```
 
 ### Dependencies
 
-The server uses only the .NET and ASP.NET Core shared frameworks plus `Microsoft.Extensions.Hosting.WindowsServices` and `Microsoft.Extensions.Hosting.Systemd`, two small Microsoft packages that let the same binary run as a Windows service or a systemd unit. The WebDAV implementation, LDAP and IMAP clients, PAM and Windows logon interop are part of this project. There is no database: the configuration is a JSON file and locks are kept in memory.
+The server uses only the .NET and ASP.NET Core shared frameworks plus `Microsoft.Extensions.Hosting.WindowsServices` and `Microsoft.Extensions.Hosting.Systemd`, two small Microsoft packages that let the same binary run as a Windows service or a systemd unit. The file manager uses `Microsoft.AspNetCore.Components.WebAssembly`; its few browser helpers (drag and drop, uploads) are a small script in this repository, with no JavaScript libraries. The WebDAV implementation, LDAP and IMAP clients, PAM and Windows logon interop are part of this project. There is no database: the configuration is a JSON file and locks are kept in memory.
 
 ## License
 

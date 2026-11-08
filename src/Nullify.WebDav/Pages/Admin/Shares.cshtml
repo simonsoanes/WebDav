@@ -1,0 +1,48 @@
+@page
+@model Nullify.WebDav.Pages.Admin.SharesModel
+@{
+    ViewData["Title"] = "Shares";
+}
+<div class="page-head">
+    <div>
+        <h1>Shares</h1>
+        <p>Folders users have shared with each other. A share only works while its owner can still reach the folder.</p>
+    </div>
+    <a class="btn" asp-page="/Admin/Settings">Sharing settings</a>
+</div>
+
+@if (!Model.SharingEnabled)
+{
+    <div class="alert warn">Sharing is turned off in Settings, so none of these shares is currently usable.</div>
+}
+
+<div class="card">
+    @if (Model.Rows.Count == 0)
+    {
+        <p class="empty">Nobody has shared a folder yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Share</th><th>Owner</th><th>Shared with</th><th>Folder</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr>
+                    <td>
+                        <b>@r.Share.Name</b>
+                        <span class="badge @(r.Share.Access == AccessLevel.ReadWrite ? "accent" : "")">@(r.Share.Access == AccessLevel.ReadWrite ? "can edit" : "can view")</span>
+                        @if (!r.Info.Available) { <span class="badge warn">not available</span> }
+                    </td>
+                    <td>@r.Share.Owner</td>
+                    <td class="small">@Names.JoinList(r.Share.Users.Concat(r.Share.Groups.Select(g => g + " (group)")))</td>
+                    <td class="small"><code>@r.Share.Storage:/@r.Share.Path</code><div class="muted">from mount @r.Share.Mount</div></td>
+                    <td class="actions">
+                        <form method="post" asp-page-handler="Remove" asp-route-id="@r.Share.Id"><button class="small danger" type="submit">Remove</button></form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>

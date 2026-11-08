@@ -10,6 +10,8 @@ ARG VERSION=0.0.0
 WORKDIR /src
 COPY Nullify.WebDav.slnx ./
 COPY src/Nullify.WebDav/Nullify.WebDav.csproj src/Nullify.WebDav/
+COPY src/Nullify.WebDav.Client/Nullify.WebDav.Client.csproj src/Nullify.WebDav.Client/
+COPY src/Nullify.WebDav.Shared/Nullify.WebDav.Shared.csproj src/Nullify.WebDav.Shared/
 COPY tests/Nullify.WebDav.Tests/Nullify.WebDav.Tests.csproj tests/Nullify.WebDav.Tests/
 RUN dotnet restore Nullify.WebDav.slnx
 COPY src/ src/

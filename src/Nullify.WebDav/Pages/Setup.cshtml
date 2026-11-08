@@ -2,11 +2,9 @@
 @model SetupModel
 @{
     ViewData["Title"] = "Setup";
+    ViewData["Subtitle"] = "First-time setup";
 }
-<div class="narrow">
-    <div class="card">
-        <h1>Welcome</h1>
-        <p class="muted">Create the first administrator account to finish setting up Nullify.WebDav.</p>
+<p class="lead">Create the first administrator account to finish setting up Nullify.WebDav.</p>
         <partial name="_ValidationSummary" />
         <form method="post" class="stack">
             @if (Model.TokenRequired)
@@ -36,5 +34,3 @@
             </div>
             <button class="primary block" type="submit">Create administrator</button>
         </form>
-    </div>
-</div>

@@ -43,6 +43,7 @@ public static class ConfigValidator
         c.Users ??= [];
         c.Storages ??= [];
         c.Mounts ??= [];
+        c.Shares ??= [];
 
         if (c.Settings.MaxUploadMegabytes < 0) errors.Add("Settings.MaxUploadMegabytes cannot be negative.");
         if (c.Settings.MaxLockTimeoutMinutes is < 1 or > 525_600) errors.Add("Settings.MaxLockTimeoutMinutes must be between 1 and 525600.");
@@ -122,8 +123,35 @@ public static class ConfigValidator
                 if (r.Path != null && !PathSafety.IsValidTemplate(r.Path)) errors.Add($"{rl}: invalid path '{r.Path}'.");
             }
         }
+
+        // Shares are written by users: keep them well formed, but a share whose mount or owner has gone away is not an
+        // error (it simply stops working), so removing a mount or user never fails because of someone's share.
+        Unique(errors, "share id", c.Shares.Select(s => s.Id));
+        foreach (var owner in c.Shares.GroupBy(s => s.Owner, StringComparer.OrdinalIgnoreCase))
+            foreach (var g in owner.GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
+                errors.Add($"User '{owner.Key}' has more than one share named '{g.Key}'.");
+        foreach (var s in c.Shares)
+        {
+            s.Users ??= [];
+            s.Groups ??= [];
+            s.OwnerGroups ??= [];
+            var label = $"Share '{s.Id}'";
+            if (string.IsNullOrEmpty(s.Id) || !Names.IsValidName(s.Id)) errors.Add($"{label}: invalid id.");
+            if (!Names.IsValidUsername(s.Owner)) errors.Add($"{label}: invalid owner '{s.Owner}'.");
+            if (!IsValidShareName(s.Name)) errors.Add($"{label}: invalid name '{s.Name}'.");
+            if (PathSafety.SplitRelative(s.Path) == null) errors.Add($"{label}: invalid path '{s.Path}'.");
+            if (s.Access is not (AccessLevel.Read or AccessLevel.ReadWrite)) errors.Add($"{label}: access must be Read or ReadWrite.");
+            foreach (var u in s.Users)
+                if (!Names.IsValidUsername(u)) errors.Add($"{label}: invalid user name '{u}'.");
+            foreach (var g in s.Groups.Concat(s.OwnerGroups))
+                if (!Names.IsValidGroup(g)) errors.Add($"{label}: invalid group name '{g}'.");
+        }
         return errors;
     }
+
+    /// <summary>A share name is one safe path segment without brackets (they mark the owner in the URL).</summary>
+    public static bool IsValidShareName(string? name) =>
+        name is { Length: > 0 and <= 100 } && name == name.Trim() && PathSafety.IsSafeSegment(name) && name.IndexOfAny(['(', ')']) < 0;
 
     private static void Unique(List<string> errors, string what, IEnumerable<string> names)
     {

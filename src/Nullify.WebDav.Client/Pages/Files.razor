@@ -1,0 +1,488 @@
+@* Copyright 2026 Simon Soanes
+   SPDX-License-Identifier: Apache-2.0 *@
+@page "/dav"
+@page "/dav/{*Path}"
+@implements IAsyncDisposable
+
+<PageTitle>@Title</PageTitle>
+
+@if (session == null)
+{
+    @if (fatal != null)
+    {
+        <div class="empty-state" style="height:100vh;">
+            <div class="empty-icon"><Icon Name="alert" Size="26" /></div>
+            <h3>The file manager could not start</h3>
+            <p>@fatal</p>
+            <p><button class="btn" @onclick="() => Nav.NavigateTo(Nav.Uri, forceLoad: true)">Try again</button></p>
+        </div>
+    }
+    else
+    {
+        <div class="boot"><span class="spinner"></span> Loading your files…</div>
+    }
+    return;
+}
+
+<div class="app-shell">
+    <aside class="sidebar @(sidebarOpen ? "open" : "")">
+        <div class="brand">
+            <div class="brand-mark"><Icon Name="folder" Size="17" /></div>
+            <div class="brand-text">Nullify<small>WebDav</small></div>
+            <span class="spacer"></span>
+            <button class="icon-btn small rail-toggle" @onclick="ToggleRail" title="Collapse or expand sidebar"><Icon Name="sidebar" Size="16" /></button>
+        </div>
+
+        <button class="btn accent compose-btn" @onclick="() => PickUpload(false)" disabled="@(!CanWrite || view != View.Folder || uploading)" title="Upload files to this folder">
+            <Icon Name="upload" Size="16" /> <span class="label">Upload</span>
+        </button>
+
+        <div class="folder-list">
+            <div class="nav-section">
+                <div class="nav-label"><span>Folders</span></div>
+                @if (session.Mounts.Count == 0)
+                {
+                    <div class="nav-empty">No folders yet. Ask your administrator.</div>
+                }
+                @foreach (var m in session.Mounts)
+                {
+                    var mount = m;
+                    var url = MountUrl(m.Name);
+                    <a class="nav-item @(view == View.Folder && Names.Eq(mountSegment, m.Name) ? "active" : "")" href="@url" title="@(string.IsNullOrEmpty(m.Description) ? m.Name : m.Description)"
+                       data-drop-url="@(m.CanWrite && m.Unavailable == null ? url : null)" @onclick="CloseSidebar">
+                        <Icon Name="@(m.IsDefault ? "home" : "hard-drive")" Size="17" />
+                        <span class="label">@m.Name</span>
+                        @if (!m.CanWrite) { <span class="sub">read only</span> }
+                    </a>
+                }
+            </div>
+            @if (session.SharedWithMe.Count > 0)
+            {
+                <div class="nav-section">
+                    <div class="nav-label"><span>Shared with me</span></div>
+                    @foreach (var s in session.SharedWithMe)
+                    {
+                        var url = MountUrl(s.Segment);
+                        <a class="nav-item @(view == View.Folder && Names.Eq(mountSegment, s.Segment) ? "active" : "")" href="@url" title="@s.Name, shared by @s.OwnerName"
+                           data-drop-url="@(s.CanWrite ? url : null)" @onclick="CloseSidebar">
+                            <Icon Name="folder-shared" Size="17" />
+                            <span class="label">@s.Name</span>
+                            <span class="sub">@s.OwnerName</span>
+                        </a>
+                    }
+                </div>
+            }
+        </div>
+
+        <nav class="sidebar-nav">
+            @if (session.SharingEnabled)
+            {
+                <a class="nav-item @(view == View.SharedByMe ? "active" : "")" href="dav/?view=shared" title="Folders you shared" @onclick="CloseSidebar">
+                    <Icon Name="share" Size="17" /><span class="label">Shared by me</span>
+                    @if (myShares.Count > 0) { <span class="count muted">@myShares.Count</span> }
+                </a>
+            }
+            <a class="nav-item" href="./" title="Connection details for your devices"><Icon Name="plug" Size="17" /><span class="label">Connect devices</span></a>
+            <a class="nav-item" href="account/profile" title="Account and app passwords"><Icon Name="key" Size="17" /><span class="label">Account</span></a>
+            @if (session.IsAdmin)
+            {
+                <a class="nav-item" href="admin/users" title="Administration"><Icon Name="shield" Size="17" /><span class="label">Administration</span></a>
+            }
+        </nav>
+
+        <div class="user-chip">
+            <a class="avatar sm" style="--hue:@Hue(session.Username)" href="account/profile" title="Account">@Initials(session.DisplayName)</a>
+            <span class="who">
+                <strong title="@session.Username">@session.DisplayName</strong>
+                <span>@(session.IsAdmin ? "Administrator" : "Signed in")</span>
+            </span>
+            <button class="icon-btn small" @onclick="ToggleTheme" title="Light or dark"><Icon Name="moon" Size="16" /></button>
+            <button class="icon-btn small" @onclick="SignOut" title="Sign out"><Icon Name="logout" Size="16" /></button>
+        </div>
+    </aside>
+    <div class="splitter" data-resize="sidebar" role="separator" aria-orientation="vertical"></div>
+    <div class="sidebar-backdrop @(sidebarOpen ? "open" : "")" @onclick="CloseSidebar"></div>
+
+    <div class="main-area">
+        <div class="page-pane fill">
+            <div class="docs-shell" tabindex="0" @ref="shellRef" @onkeydown="OnKey" @onkeydown:preventDefault="preventKey"
+                 data-drop-url="@(view == View.Folder && CanWrite && listing != null ? FolderUrl : null)">
+                <div class="docs-head">
+                    <button class="icon-btn show-menu" style="display:none;" @onclick="() => sidebarOpen = true" title="Menu"><Icon Name="menu" /></button>
+                    <nav class="crumbs" aria-label="Folder path">
+                        @if (view == View.SharedByMe)
+                        {
+                            <a class="crumb" href="dav/?view=shared"><Icon Name="share" Size="16" /> <span>Shared by me</span></a>
+                        }
+                        else
+                        {
+                            <a class="crumb" href="dav/" title="All folders"><Icon Name="hard-drive" Size="16" /> <span>All folders</span></a>
+                            @if (view == View.Folder)
+                            {
+                                <Icon Name="chevron-right" Size="14" Class="crumb-sep" />
+                                <a class="crumb" href="@MountUrl(mountSegment)" data-drop-url="@(CanWrite && segments.Length > 0 ? MountUrl(mountSegment) : null)">@MountTitle</a>
+                                @for (var i = 0; i < segments.Length; i++)
+                                {
+                                    var url = UrlFor(segments[..(i + 1)], true);
+                                    var last = i == segments.Length - 1;
+                                    <Icon Name="chevron-right" Size="14" Class="crumb-sep" />
+                                    <a class="crumb" href="@url" data-drop-url="@(CanWrite && !last ? url : null)">@segments[i]</a>
+                                }
+                            }
+                        }
+                    </nav>
+                    @if (loading) { <span class="spinner" style="color:var(--muted);" aria-label="Loading"></span> }
+                    <span class="spacer"></span>
+                    @if (listing?.QuotaAvailable is { } free)
+                    {
+                        <span class="read-only-note" title="Free space on this storage">@Format.Size(free) free</span>
+                    }
+                    @if (view != View.Root)
+                    {
+                        <button class="icon-btn" @onclick="Refresh" title="Refresh (F5)" disabled="@loading"><Icon Name="refresh" Size="17" /></button>
+                    }
+                </div>
+
+                @if (view == View.Folder && listing != null && unavailable == null)
+                {
+                    <div class="docs-tools">
+                        @if (selected.Count > 0)
+                        {
+                            var sel = Selection();
+                            <span class="sel-count">@selected.Count selected</span>
+                            @if (sel.All(e => !e.IsFolder))
+                            {
+                                <button class="btn small" @onclick="DownloadSelection" title="Download"><Icon Name="download" Size="15" /> <span class="tool-label">Download</span></button>
+                            }
+                            @if (CanWrite)
+                            {
+                                <button class="btn small" @onclick="() => ToClipboard(true)" title="Cut (Ctrl+X)"><Icon Name="scissors" Size="15" /> <span class="tool-label">Cut</span></button>
+                            }
+                            <button class="btn small" @onclick="() => ToClipboard(false)" title="Copy (Ctrl+C)"><Icon Name="copy" Size="15" /> <span class="tool-label">Copy</span></button>
+                            @if (CanWrite && sel.Count == 1)
+                            {
+                                <button class="btn small" @onclick="() => StartRename(sel[0])" title="Rename (F2)"><Icon Name="pen" Size="15" /> <span class="tool-label">Rename</span></button>
+                            }
+                            @if (CanShare && sel.Count == 1 && sel[0].IsFolder)
+                            {
+                                <button class="btn small" @onclick="() => OpenShare(sel[0])" title="Share with people"><Icon Name="share" Size="15" /> <span class="tool-label">Share</span></button>
+                            }
+                            @if (CanWrite)
+                            {
+                                <button class="btn small danger" @onclick="DeleteSelection" title="Delete (Del)"><Icon Name="trash" Size="15" /> <span class="tool-label">Delete</span></button>
+                            }
+                            <span class="spacer"></span>
+                            <button class="icon-btn small" @onclick="ClearSelection" title="Clear selection (Esc)"><Icon Name="x" Size="15" /></button>
+                        }
+                        else if (CanWrite)
+                        {
+                            <button class="btn small" @onclick="() => StartCreate(Creating.Folder)"><Icon Name="folder-plus" Size="15" /> <span class="tool-label">New folder</span></button>
+                            <button class="btn small" @onclick="() => StartCreate(Creating.File)"><Icon Name="file-plus" Size="15" /> <span class="tool-label">New text file</span></button>
+                            <button class="btn small" @onclick="() => PickUpload(false)" disabled="@uploading" title="Upload files (or drag them here)"><Icon Name="upload" Size="15" /> <span class="tool-label">Upload</span></button>
+                            <button class="btn small" @onclick="() => PickUpload(true)" disabled="@uploading" title="Upload a folder with everything in it"><Icon Name="folder-input" Size="15" /> <span class="tool-label">Upload folder</span></button>
+                            @if (clipboard.Count > 0)
+                            {
+                                <button class="btn small" @onclick="Paste" title="Paste (Ctrl+V)"><Icon Name="clipboard" Size="15" /> <span class="tool-label">Paste @clipboard.Count</span></button>
+                            }
+                            <span class="spacer"></span>
+                            @if (CanShare)
+                            {
+                                <button class="btn small" @onclick="() => OpenShare(null)" title="Share this folder"><Icon Name="share" Size="15" /> <span class="tool-label">Share folder</span></button>
+                            }
+                        }
+                        else
+                        {
+                            <span class="read-only-note"><Icon Name="lock" Size="14" /> Read only. You can open, download and copy from here.</span>
+                        }
+                    </div>
+                }
+
+                @if (upload != null)
+                {
+                    <div class="upload-status" role="status">
+                        <span class="spinner"></span>
+                        <span class="upload-name">Uploading @upload.Name@(upload.Count > 1 ? $" ({upload.Index} of {upload.Count})" : "")</span>
+                        <div class="quota-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@upload.Percent"><span style="width:@upload.Percent%"></span></div>
+                        <span class="upload-pct">@upload.Percent% · @Format.Size(upload.Sent) of @Format.Size(upload.Total)</span>
+                        <button class="btn ghost small" @onclick="CancelUpload">Cancel</button>
+                    </div>
+                }
+
+                @switch (view)
+                {
+                    case View.Root:
+                        <div class="docs-table-wrap">
+                            <div class="section-title">Your folders</div>
+                            <div class="docs-tiles">
+                                @foreach (var m in session.Mounts)
+                                {
+                                    <a class="tile" href="@MountUrl(m.Name)" data-drop-url="@(m.CanWrite && m.Unavailable == null ? MountUrl(m.Name) : null)">
+                                        <span class="icon-tile"><Icon Name="@(m.IsDefault ? "home" : "hard-drive")" Size="19" /></span>
+                                        <div><strong>@m.Name</strong><span>@(string.IsNullOrEmpty(m.Description) ? (m.CanWrite ? "Read & write" : "Read only") : m.Description)</span></div>
+                                    </a>
+                                }
+                            </div>
+                            @if (session.SharedWithMe.Count > 0)
+                            {
+                                <div class="section-title">Shared with me</div>
+                                <div class="docs-tiles">
+                                    @foreach (var s in session.SharedWithMe)
+                                    {
+                                        <a class="tile" href="@MountUrl(s.Segment)" data-drop-url="@(s.CanWrite ? MountUrl(s.Segment) : null)">
+                                            <span class="icon-tile"><Icon Name="folder-shared" Size="19" /></span>
+                                            <div><strong>@s.Name</strong><span>from @s.OwnerName · @(s.CanWrite ? "can edit" : "can view")</span></div>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                            @if (session.Mounts.Count == 0 && session.SharedWithMe.Count == 0)
+                            {
+                                <div class="empty-state">
+                                    <div class="empty-icon"><Icon Name="folder" Size="26" /></div>
+                                    <h3>No folders yet</h3>
+                                    <p>Your administrator has not given you access to any folders.</p>
+                                </div>
+                            }
+                        </div>
+                        break;
+
+                    case View.SharedByMe:
+                        <div class="docs-table-wrap docs-pad">
+                            @if (myShares.Count == 0)
+                            {
+                                <div class="empty-state">
+                                    <div class="empty-icon"><Icon Name="share" Size="26" /></div>
+                                    <h3>You have not shared any folders</h3>
+                                    <p>Right-click a folder and choose <b>Share</b> to let other people open it.</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <ul class="share-list">
+                                    @foreach (var s in myShares)
+                                    {
+                                        var share = s;
+                                        <li class="@(s.Available ? "" : "broken")">
+                                            <Icon Name="@(s.Available ? "folder-shared" : "alert")" Size="20" />
+                                            <div>
+                                                <strong>@s.Name</strong>
+                                                <span>@s.Mount@(s.Path.Length > 0 ? " / " + s.Path.Replace("/", " / ") : "") · @(s.Access == ShareAccess.ReadWrite ? "can edit" : "can view")</span>
+                                                <span>With @Recipients(s)@(s.Available ? "" : " · not available: the folder was removed or you no longer have access")</span>
+                                            </div>
+                                            @if (s.Available)
+                                            {
+                                                <a class="btn small" href="@SharedFolderUrl(s)">Open</a>
+                                            }
+                                            <button class="btn small" @onclick="() => EditShare(share)">Edit</button>
+                                            <button class="btn small danger" @onclick="() => StopSharing(share)">Stop sharing</button>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        break;
+
+                    case View.Folder when unavailable != null:
+                        <div class="empty-state">
+                            <div class="empty-icon"><Icon Name="lock" Size="26" /></div>
+                            <h3>Not available in the browser</h3>
+                            <p>@unavailable</p>
+                            <p><a class="btn" href="./">Connection details</a></p>
+                        </div>
+                        break;
+
+                    case View.Folder when error != null && listing == null:
+                        <div class="empty-state">
+                            <div class="empty-icon"><Icon Name="alert" Size="26" /></div>
+                            <h3>This folder could not be opened</h3>
+                            <p>@error</p>
+                            <p><a class="btn" href="dav/">All folders</a></p>
+                        </div>
+                        break;
+
+                    case View.Folder when listing != null:
+                        <div class="docs-table-wrap" @oncontextmenu="e => OpenMenu(e, null)" @oncontextmenu:preventDefault="true" @onclick="BackgroundClick">
+                            <table class="docs-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-check"><input type="checkbox" checked="@(listing.Items.Count > 0 && selected.Count == listing.Items.Count)" @onchange="ToggleAll" @onclick:stopPropagation="true" aria-label="Select all" /></th>
+                                        <th class="col-name"><button @onclick='() => SortBy("name")'>Name @SortMark("name")</button></th>
+                                        <th class="col-mod"><button @onclick='() => SortBy("modified")'>Modified @SortMark("modified")</button></th>
+                                        <th class="col-size"><button @onclick='() => SortBy("size")'>Size @SortMark("size")</button></th>
+                                        <th class="col-act"><span class="sr-only">Actions</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (creating != Creating.None)
+                                    {
+                                        <tr class="editing">
+                                            <td colspan="5">
+                                                <div class="rename-row" @onclick:stopPropagation="true">
+                                                    <Icon Name="@(creating == Creating.Folder ? "folder" : "file-code")" Size="18" />
+                                                    <input @ref="nameInput" @bind="nameValue" @bind:event="oninput" @onkeydown="CreateKey"
+                                                           placeholder="@(creating == Creating.Folder ? "Folder name" : "File name")" aria-label="Name" />
+                                                    <button class="btn small accent" @onclick="Create">Create</button>
+                                                    <button class="btn small ghost" @onclick="CancelEdit">Cancel</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    @foreach (var item in Sorted())
+                                    {
+                                        var it = item;
+                                        @if (renaming == it.Url)
+                                        {
+                                            <tr class="editing">
+                                                <td colspan="5">
+                                                    <div class="rename-row" @onclick:stopPropagation="true">
+                                                        <Icon Name="@Format.IconFor(it)" Size="18" />
+                                                        <input @ref="nameInput" @bind="nameValue" @bind:event="oninput" @onkeydown="e => RenameKey(e, it)" aria-label="New name" />
+                                                        <button class="btn small accent" @onclick="() => Rename(it)">Rename</button>
+                                                        <button class="btn small ghost" @onclick="CancelEdit">Cancel</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            continue;
+                                        }
+                                        var isSel = selected.Contains(it.Url);
+                                        <tr class="@RowClass(it, isSel)" data-name="@it.Name" draggable="true" data-drag-url="@it.Url" data-drag-name="@it.Name"
+                                            data-drop-url="@(it.IsFolder && CanWrite ? it.Url : null)"
+                                            @onclick="e => RowClick(e, it)" @onclick:stopPropagation="true" @ondblclick="() => Open(it)"
+                                            @oncontextmenu="e => OpenMenu(e, it)" @oncontextmenu:preventDefault="true" @oncontextmenu:stopPropagation="true">
+                                            <td class="col-check"><input type="checkbox" checked="@isSel" @onchange="() => Toggle(it)" @onclick:stopPropagation="true" aria-label="Select @it.Name" /></td>
+                                            <td class="col-name">
+                                                <a class="doc-name" href="@(it.IsFolder ? it.Url : null)" @onclick="() => Open(it)" @onclick:preventDefault="true" @onclick:stopPropagation="true" title="@it.Name">
+                                                    <Icon Name="@Format.IconFor(it)" Size="18" Class="@(it.IsFolder ? "ic-folder" : null)" /><span>@it.Name</span>
+                                                    @if (it.IsFolder && IsShared(it)) { <span class="share-badge" title="You shared this folder"><Icon Name="share" Size="13" /></span> }
+                                                </a>
+                                            </td>
+                                            <td class="col-mod" title="@Format.Full(it.Modified)">@Format.When(it.Modified)</td>
+                                            <td class="col-size">@(it.Size is { } s ? Format.Size(s) : "")</td>
+                                            <td class="col-act">
+                                                <span class="row-actions">
+                                                    @if (!it.IsFolder)
+                                                    {
+                                                        <a class="icon-btn small" href="@it.Url" download="@it.Name" title="Download" @onclick:stopPropagation="true"><Icon Name="download" Size="15" /></a>
+                                                    }
+                                                    <button class="icon-btn small" @onclick="e => OpenMenuFromButton(e, it)" @onclick:stopPropagation="true" title="More"><Icon Name="more" Size="15" /></button>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            @if (listing.Items.Count == 0 && creating == Creating.None)
+                            {
+                                <div class="empty-state">
+                                    <div class="empty-icon"><Icon Name="folder" Size="26" /></div>
+                                    <h3>This folder is empty</h3>
+                                    <p>@(CanWrite ? "Drag files or folders here, or use Upload." : "There is nothing here yet.")</p>
+                                </div>
+                            }
+                        </div>
+                        <div class="drop-overlay" aria-hidden="true">
+                            <div class="drop-hint"><Icon Name="upload" Size="28" /><span>Drop to upload to @(segments.Length > 0 ? segments[^1] : MountTitle)</span></div>
+                        </div>
+                        break;
+
+                    default:
+                        <div class="boot inline"><span class="spinner"></span></div>
+                        break;
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (menuAt is { } at)
+    {
+        <ContextMenu X="at.X" Y="at.Y" OnClose="CloseMenu">
+            @if (menuItems.Count == 0)
+            {
+                <div class="menu-title">@(segments.Length > 0 ? segments[^1] : MountTitle)</div>
+                @if (CanWrite)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => StartCreate(Creating.Folder))"><Icon Name="folder-plus" Size="16" /> <span>New folder</span></button>
+                    <button class="menu-item" @onclick="() => FromMenu(() => StartCreate(Creating.File))"><Icon Name="file-plus" Size="16" /> <span>New text file</span></button>
+                    <button class="menu-item" @onclick="() => FromMenu(() => PickUpload(false))" disabled="@uploading"><Icon Name="upload" Size="16" /> <span>Upload files…</span></button>
+                    <button class="menu-item" @onclick="() => FromMenu(() => PickUpload(true))" disabled="@uploading"><Icon Name="folder-input" Size="16" /> <span>Upload a folder…</span></button>
+                    <button class="menu-item" @onclick="() => FromMenu(Paste)" disabled="@(clipboard.Count == 0)"><Icon Name="clipboard" Size="16" /> <span>Paste</span><span class="spacer"></span><kbd>Ctrl V</kbd></button>
+                    <div class="menu-sep"></div>
+                }
+                @if (CanShare)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => OpenShare(null))"><Icon Name="share" Size="16" /> <span>Share this folder…</span></button>
+                }
+                <button class="menu-item" @onclick="() => FromMenu(() => CopyLink(null))"><Icon Name="link" Size="16" /> <span>Copy WebDAV address</span></button>
+                <button class="menu-item" @onclick="() => FromMenu(SelectAll)"><Icon Name="select-all" Size="16" /> <span>Select all</span><span class="spacer"></span><kbd>Ctrl A</kbd></button>
+                <button class="menu-item" @onclick="() => FromMenu(Refresh)"><Icon Name="refresh" Size="16" /> <span>Refresh</span></button>
+            }
+            else
+            {
+                var one = menuItems.Count == 1 ? menuItems[0] : null;
+                <div class="menu-title">@(one?.Name ?? $"{menuItems.Count} items")</div>
+                @if (one != null)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => Open(one))"><Icon Name="@(one.IsFolder ? "folder" : Format.IsText(one.Name) ? "pen" : "external")" Size="16" />
+                        <span>@(one.IsFolder ? "Open" : Format.IsText(one.Name) ? (CanWrite ? "Edit" : "View") : "Open in a new tab")</span></button>
+                }
+                @if (menuItems.All(i => !i.IsFolder))
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(DownloadSelection)"><Icon Name="download" Size="16" /> <span>Download</span></button>
+                }
+                @if (one is { IsFolder: false } && Format.IsText(one.Name))
+                {
+                    <a class="menu-item" href="@one.Url" target="_blank" rel="noopener" @onclick="CloseMenu"><Icon Name="external" Size="16" /> <span>Open in a new tab</span></a>
+                }
+                <div class="menu-sep"></div>
+                @if (CanWrite)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => ToClipboard(true))"><Icon Name="scissors" Size="16" /> <span>Cut</span><span class="spacer"></span><kbd>Ctrl X</kbd></button>
+                }
+                <button class="menu-item" @onclick="() => FromMenu(() => ToClipboard(false))"><Icon Name="copy" Size="16" /> <span>Copy</span><span class="spacer"></span><kbd>Ctrl C</kbd></button>
+                @if (one is { IsFolder: true } && CanWrite && clipboard.Count > 0)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => PasteInto(one.Url))"><Icon Name="clipboard" Size="16" /> <span>Paste into folder</span></button>
+                }
+                @if (one != null && CanWrite)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => StartRename(one))"><Icon Name="pen" Size="16" /> <span>Rename</span><span class="spacer"></span><kbd>F2</kbd></button>
+                }
+                @if (one is { IsFolder: true } && CanShare)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => OpenShare(one))"><Icon Name="share" Size="16" /> <span>@(IsShared(one) ? "Sharing…" : "Share…")</span></button>
+                }
+                @if (one != null)
+                {
+                    <button class="menu-item" @onclick="() => FromMenu(() => CopyLink(one))"><Icon Name="link" Size="16" /> <span>Copy WebDAV address</span></button>
+                }
+                @if (CanWrite)
+                {
+                    <div class="menu-sep"></div>
+                    <button class="menu-item danger" @onclick="() => FromMenu(DeleteSelection)"><Icon Name="trash" Size="16" /> <span>Delete</span><span class="spacer"></span><kbd>Del</kbd></button>
+                }
+            }
+        </ContextMenu>
+    }
+
+    @if (editing != null)
+    {
+        <TextEditor Url="@editing.Url" Name="@editing.Name" Size="editing.Size" ReadOnly="!CanWrite" OnClose="EditorClosed" />
+    }
+
+    @if (sharing != null)
+    {
+        <ShareDialog Mount="@sharing.Value.Mount" Path="@sharing.Value.Path" FolderName="@sharing.Value.Name" CanWrite="sharing.Value.CanWrite"
+                     DavUrl="@session.DavUrl" Existing="sharing.Value.Existing" OnClose="ShareClosed" />
+    }
+
+    <div class="toasts" role="status" aria-live="polite">
+        @foreach (var toast in State.Toasts)
+        {
+            <div class="toast @(toast.IsError ? "error" : "")">
+                <span>@toast.Message</span>
+                <span class="spacer"></span>
+                <button @onclick="() => State.DismissToast(toast.Id)" title="Dismiss"><Icon Name="x" Size="15" /></button>
+            </div>
+        }
+    </div>
+</div>
