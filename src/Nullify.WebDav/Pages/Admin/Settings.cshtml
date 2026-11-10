@@ -36,10 +36,16 @@
                 <input asp-for="MaxLockTimeoutMinutes" type="number" min="1" />
                 <span class="hint">Clients asking for longer or infinite locks get this.</span>
             </div>
+            <div class="field">
+                <label asp-for="MaxDepthInfinityItems">Largest whole-tree listing</label>
+                <input asp-for="MaxDepthInfinityItems" type="number" min="1" max="1000000" />
+                <span class="hint">Entries in one <code>Depth: infinity</code> PROPFIND; bigger trees are refused and clients list folder by folder.</span>
+            </div>
         </div>
         <div class="checks">
             <label class="check"><input asp-for="BrowserListing" /> Web file manager (opening /dav/ folders in a browser)</label>
             <label class="check"><input asp-for="AllowSharing" /> Users can share folders with each other</label>
+            <label class="check"><input asp-for="AllowDepthInfinity" /> Whole-tree listings (PROPFIND <code>Depth: infinity</code>)</label>
             <label class="check"><input asp-for="AllowAppPasswords" /> Allow app passwords</label>
             <label class="check"><input asp-for="AllowInsecureHttp" /> Accept passwords over plain HTTP (testing only)</label>
         </div>

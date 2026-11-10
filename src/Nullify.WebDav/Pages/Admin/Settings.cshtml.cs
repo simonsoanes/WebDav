@@ -17,6 +17,8 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
     [BindProperty] public int MaxLockTimeoutMinutes { get; set; }
     [BindProperty] public bool AllowInsecureHttp { get; set; }
     [BindProperty] public bool AllowSharing { get; set; }
+    [BindProperty] public bool AllowDepthInfinity { get; set; }
+    [BindProperty] public int MaxDepthInfinityItems { get; set; }
     [BindProperty] public string RawConfig { get; set; } = "";
 
     public List<string> MountNames { get; private set; } = [];
@@ -36,6 +38,8 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
         MaxLockTimeoutMinutes = c.Settings.MaxLockTimeoutMinutes;
         AllowInsecureHttp = c.Settings.AllowInsecureHttp;
         AllowSharing = c.Settings.AllowSharing;
+        AllowDepthInfinity = c.Settings.AllowDepthInfinity;
+        MaxDepthInfinityItems = c.Settings.MaxDepthInfinityItems;
         RawConfig = ConfigStore.Serialize(c);
     }
 
@@ -52,6 +56,8 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
             c.Settings.MaxLockTimeoutMinutes = MaxLockTimeoutMinutes;
             c.Settings.AllowInsecureHttp = AllowInsecureHttp;
             c.Settings.AllowSharing = AllowSharing;
+            c.Settings.AllowDepthInfinity = AllowDepthInfinity;
+            c.Settings.MaxDepthInfinityItems = MaxDepthInfinityItems;
         });
         if (errors.Count > 0)
         {
@@ -81,7 +87,9 @@ public class SettingsModel(ConfigStore store, LockManager locks) : AppPageModel
             MaxUploadMegabytes = c.Settings.MaxUploadMegabytes;
             MaxLockTimeoutMinutes = c.Settings.MaxLockTimeoutMinutes;
             AllowInsecureHttp = c.Settings.AllowInsecureHttp;
-        AllowSharing = c.Settings.AllowSharing;
+            AllowSharing = c.Settings.AllowSharing;
+            AllowDepthInfinity = c.Settings.AllowDepthInfinity;
+            MaxDepthInfinityItems = c.Settings.MaxDepthInfinityItems;
             return Page();
         }
         StatusMessage = "Configuration saved.";

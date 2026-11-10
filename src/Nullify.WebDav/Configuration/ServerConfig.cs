@@ -63,6 +63,10 @@ public sealed class GeneralSettings
     /// <summary>Largest accepted upload in MiB; 0 means only limited by free space.</summary>
     public long MaxUploadMegabytes { get; set; }
     public int MaxLockTimeoutMinutes { get; set; } = 1440;
+    /// <summary>Answer PROPFIND with Depth: infinity (a whole tree in one request), as RFC 4918 asks servers to.</summary>
+    public bool AllowDepthInfinity { get; set; } = true;
+    /// <summary>Most entries one Depth: infinity PROPFIND may report; bigger trees get 403 propfind-finite-depth, so clients fall back to Depth: 1.</summary>
+    public int MaxDepthInfinityItems { get; set; } = 20_000;
     /// <summary>Accept Basic credentials over plain HTTP from non-loopback clients. Only for testing.</summary>
     public bool AllowInsecureHttp { get; set; }
     /// <summary>Let users share folders with other users (each mount can also turn this off).</summary>

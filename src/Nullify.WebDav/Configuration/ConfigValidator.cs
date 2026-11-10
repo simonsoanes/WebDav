@@ -47,6 +47,7 @@ public static class ConfigValidator
 
         if (c.Settings.MaxUploadMegabytes < 0) errors.Add("Settings.MaxUploadMegabytes cannot be negative.");
         if (c.Settings.MaxLockTimeoutMinutes is < 1 or > 525_600) errors.Add("Settings.MaxLockTimeoutMinutes must be between 1 and 525600.");
+        if (c.Settings.MaxDepthInfinityItems is < 1 or > 1_000_000) errors.Add("Settings.MaxDepthInfinityItems must be between 1 and 1000000.");
         if (!string.IsNullOrEmpty(c.Settings.DefaultMount) && c.Mounts.All(m => !Names.Eq(m.Name, c.Settings.DefaultMount)))
             errors.Add($"Settings.DefaultMount refers to unknown mount '{c.Settings.DefaultMount}'.");
 

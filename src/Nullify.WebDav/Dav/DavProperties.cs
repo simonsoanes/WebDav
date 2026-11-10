@@ -33,10 +33,22 @@ public sealed partial class DavHandler
 
     // ------------------------------------------------------------------ PROPFIND
 
+    /// <summary>Deepest folder nesting a Depth: infinity listing follows (a guard against link loops and absurd trees).</summary>
+    private const int MaxInfinityNesting = 64;
+
+    /// <summary>The PROPFIND Depth header: 0, 1 or infinity (RFC 4918 9.1: no header means infinity).</summary>
+    private static int ParseDepth(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "0" => 0,
+        "1" => 1,
+        "" or "infinity" => int.MaxValue,
+        _ => throw new DavException(StatusCodes.Status400BadRequest, message: "Depth must be 0, 1 or infinity."),
+    };
+
     private async Task PropfindAsync(DavTarget t)
     {
-        var depth = Request.Headers["Depth"].ToString();
-        if (depth is not ("0" or "1"))
+        var depth = ParseDepth(Request.Headers["Depth"].ToString());
+        if (depth == int.MaxValue && !_config.Settings.AllowDepthInfinity)
             throw new DavException(StatusCodes.Status403Forbidden, D + "propfind-finite-depth");
 
         var body = await DavXml.ReadBodyAsync(Request, Ct);
@@ -48,7 +60,8 @@ public sealed partial class DavHandler
 
         var self = ItemFor(t);
         var items = new List<DavItem> { self };
-        if (depth == "1" && self.IsCollection) items.AddRange(ChildItems(t, self));
+        if (depth == 1 && self.IsCollection) items.AddRange(ChildItems(t, self));
+        if (depth == int.MaxValue && self.IsCollection) items.AddRange(TreeItems(t, self, _config.Settings.MaxDepthInfinityItems - 1));
 
         var ms = new MultiStatus();
         foreach (var item in items)
@@ -94,6 +107,59 @@ public sealed partial class DavHandler
         {
             var isDir = entry is DirectoryInfo;
             yield return new DavItem(ChildHref(self.Href, entry.Name, isDir), entry.Name, isDir, entry, t.Mount, entry.FullName);
+        }
+    }
+
+    /// <summary>
+    /// Everything below a collection, for Depth: infinity: depth first, so a folder is followed by its contents. Throws
+    /// 403 propfind-finite-depth (RFC 4918 9.1) when the tree has more than <paramref name="limit"/> entries.
+    /// </summary>
+    private List<DavItem> TreeItems(DavTarget t, DavItem self, int limit)
+    {
+        var items = new List<DavItem>();
+        void Add(DavItem item)
+        {
+            if (items.Count >= limit) throw new DavException(StatusCodes.Status403Forbidden, D + "propfind-finite-depth");
+            items.Add(item);
+        }
+
+        if (t.IsRoot)
+        {
+            foreach (var m in _mounts.EntriesFor(_user))
+            {
+                var href = HrefFor(m.Name, [], true);
+                // At /dav/ the request does not run as the user, so storage accessed as the user's Windows account is
+                // listed but not entered; a PROPFIND on the mount itself lists it under the user's own token.
+                if (m.Storage.Impersonate || !Directory.Exists(m.BasePath) ||
+                    !m.Storage.FollowSymlinks && PathSafety.CrossesLink(m.Storage.Root, m.BasePath))
+                {
+                    Add(new DavItem(href, m.Name, true, null, m, null));
+                    continue;
+                }
+                var dir = new DirectoryInfo(m.BasePath);
+                Add(new DavItem(href, m.Name, true, dir, m, m.BasePath));
+                Walk(dir, href, m, 1);
+            }
+            return items;
+        }
+
+        Walk((DirectoryInfo)self.Info!, self.Href, t.Mount!, 1);
+        return items;
+
+        void Walk(DirectoryInfo dir, string href, MountAccess mount, int level)
+        {
+            if (level > MaxInfinityNesting) throw new DavException(StatusCodes.Status403Forbidden, D + "propfind-finite-depth");
+            List<FileSystemInfo> children;
+            // A folder the server may not read is still reported, just without its contents.
+            try { children = Children(dir, mount.Storage).OrderBy(e => e.Name, StringComparer.Ordinal).ToList(); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { return; }
+            foreach (var entry in children)
+            {
+                var isDir = entry is DirectoryInfo;
+                var childHref = ChildHref(href, entry.Name, isDir);
+                Add(new DavItem(childHref, entry.Name, isDir, entry, mount, entry.FullName));
+                if (isDir) Walk((DirectoryInfo)entry, childHref, mount, level + 1);
+            }
         }
     }
 
@@ -238,13 +304,14 @@ public sealed partial class DavHandler
     {
         if (!string.Equals(Request.Method, "PROPFIND", StringComparison.OrdinalIgnoreCase))
             throw new DavException(StatusCodes.Status405MethodNotAllowed);
-        var depth = Request.Headers["Depth"].ToString();
-        if (depth is not ("0" or "1")) throw new DavException(StatusCodes.Status403Forbidden, D + "propfind-finite-depth");
+        // The server root only exists for the Windows redirector's probe; whole-tree listings start at /dav/.
+        var depth = ParseDepth(Request.Headers["Depth"].ToString());
+        if (depth == int.MaxValue) throw new DavException(StatusCodes.Status403Forbidden, D + "propfind-finite-depth");
         await DavXml.ReadBodyAsync(Request, Ct);
         var pathBase = Request.PathBase.ToUriComponent().TrimEnd('/');
         var ms = new MultiStatus();
         ms.AddPropStat(pathBase + "/", [(new XElement(D + "resourcetype", new XElement(D + "collection")), 200), (new XElement(D + "displayname", ""), 200)]);
-        if (depth == "1")
+        if (depth == 1)
             ms.AddPropStat(pathBase + "/dav/", [(new XElement(D + "resourcetype", new XElement(D + "collection")), 200), (new XElement(D + "displayname", "dav"), 200)]);
         await DavXml.WriteAsync(Response, StatusCodes.Status207MultiStatus, ms.ToXml(), Ct);
     }

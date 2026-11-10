@@ -229,12 +229,13 @@ Right-click a folder (or use *Share folder* in the toolbar) to share it with peo
 
 ## Protocol support
 
-- WebDAV (RFC 4918) class 1 and 2: `OPTIONS`, `GET`, `HEAD`, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE` (with `Depth`, `Overwrite`, cross-mount), `PROPFIND` (`allprop`, `propname`, `prop`, `include`; depth 0 and 1), `PROPPATCH`, `LOCK` (exclusive and shared write locks, depth 0/infinity, refresh, lock-null resources), `UNLOCK`, the `If` header (tagged and untagged lists, `Not`, state tokens and ETags)
+- WebDAV (RFC 4918) class 1 and 2: `OPTIONS`, `GET`, `HEAD`, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE` (with `Depth`, `Overwrite`, cross-mount), `PROPFIND` (`allprop`, `propname`, `prop`, `include`; depth 0, 1 and infinity — a missing `Depth` header means infinity, as the RFC says), `PROPPATCH`, `LOCK` (exclusive and shared write locks, depth 0/infinity, refresh, lock-null resources), `UNLOCK`, the `If` header (tagged and untagged lists, `Not`, state tokens and ETags)
 - HTTP: strong ETags, `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, single byte ranges with `If-Range`
 - Quota properties (RFC 4331), `current-user-privilege-set` (RFC 3744), the Windows redirector's `Win32*` properties (applied to file times and attributes) and legacy `ishidden`/`isreadonly`/`iscollection`, `X-OC-Mtime`, `X-Expected-Entity-Length`
-- `OPTIONS` and `PROPFIND` on the server root for the Windows redirector
+- `OPTIONS` and `PROPFIND` on the server root for the Windows redirector (depth 0 and 1)
+- `Depth: infinity` listings are depth-first and limited to *Largest whole-tree listing* entries (default 20,000; *Settings*). Bigger trees, folders nested more than 64 deep, or a server with *Whole-tree listings* turned off answer `403` with `propfind-finite-depth`, on which clients fall back to `Depth: 1`. From `/dav/`, folders on storage accessed as the user's Windows account are listed but not entered (that request does not run as the user); folders the server cannot read are reported without their contents.
 
-Not implemented: arbitrary dead properties (`PROPPATCH` of other properties returns `403`, nothing is silently dropped), `PROPFIND` with `Depth: infinity`, multiple byte ranges, partial `PUT`, Digest/NTLM/Kerberos authentication, OpenID Connect for WebDAV clients themselves (they use app passwords), group lookups from LDAP, server-side search (`SEARCH`), versioning (DeltaV), ACL changes over WebDAV, and storage backends other than the file system (including remote SMB without Windows impersonation).
+Not implemented: arbitrary dead properties (`PROPPATCH` of other properties returns `403`, nothing is silently dropped), multiple byte ranges, partial `PUT`, Digest/NTLM/Kerberos authentication, OpenID Connect for WebDAV clients themselves (they use app passwords), group lookups from LDAP, server-side search (`SEARCH`), versioning (DeltaV), ACL changes over WebDAV, and storage backends other than the file system (including remote SMB without Windows impersonation).
 
 ## CI/CD
 

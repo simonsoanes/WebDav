@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Xml.Linq;
+using Microsoft.Extensions.DependencyInjection;
+using Nullify.WebDav.Configuration;
 using static Nullify.WebDav.Tests.TestHost;
 
 namespace Nullify.WebDav.Tests;
@@ -267,8 +269,79 @@ public sealed class DavTests
         StringAssert.Contains(dirBody, "HTTP/1.1 404");
         Assert.IsTrue(Hrefs(dirBody).Contains($"/dav/home/{name}"));
 
-        var (infinity, _, _) = await SendAsync(c, "PROPFIND", "/dav/home/", null, ("Depth", "infinity"));
-        Assert.AreEqual(HttpStatusCode.Forbidden, infinity);
+        var (bad, _, _) = await SendAsync(c, "PROPFIND", "/dav/home/", null, ("Depth", "2"));
+        Assert.AreEqual(HttpStatusCode.BadRequest, bad);
+    }
+
+    [TestMethod]
+    public async Task PropfindDepthInfinityListsTheWholeTree()
+    {
+        var c = await Alice();
+        var top = Unique("tree");
+        Assert.AreEqual(HttpStatusCode.Created, (await SendAsync(c, "MKCOL", $"/dav/home/{top}/")).Status);
+        Assert.AreEqual(HttpStatusCode.Created, (await SendAsync(c, "MKCOL", $"/dav/home/{top}/a/")).Status);
+        Assert.AreEqual(HttpStatusCode.Created, (await SendAsync(c, "MKCOL", $"/dav/home/{top}/a/b c/")).Status);
+        await SendAsync(c, "PUT", $"/dav/home/{top}/a/b%20c/deep.txt", "x");
+        await SendAsync(c, "PUT", $"/dav/home/{top}/top.txt", "y");
+
+        var expected = new[]
+        {
+            $"/dav/home/{top}/", $"/dav/home/{top}/a/", $"/dav/home/{top}/a/b%20c/", $"/dav/home/{top}/a/b%20c/deep.txt", $"/dav/home/{top}/top.txt",
+        };
+        var (status, body, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/", null, ("Depth", "infinity"));
+        Assert.AreEqual(HttpStatusCode.MultiStatus, status);
+        CollectionAssert.AreEquivalent(expected, Hrefs(body));
+        var doc = XDocument.Parse(body);
+        var deep = doc.Descendants(D + "response").Single(r => r.Element(D + "href")!.Value.EndsWith("deep.txt"));
+        Assert.AreEqual("1", deep.Descendants(D + "getcontentlength").Single().Value);
+
+        // RFC 4918: no Depth header means infinity; the value is case-insensitive.
+        (status, body, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/");
+        Assert.AreEqual(HttpStatusCode.MultiStatus, status);
+        CollectionAssert.AreEquivalent(expected, Hrefs(body));
+        (status, _, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/", null, ("Depth", "Infinity"));
+        Assert.AreEqual(HttpStatusCode.MultiStatus, status);
+
+        // From /dav/ it walks every mount the user can see, and never lists mounts they cannot.
+        (status, body, _) = await SendAsync(c, "PROPFIND", "/dav/", null, ("Depth", "infinity"));
+        Assert.AreEqual(HttpStatusCode.MultiStatus, status);
+        var all = Hrefs(body);
+        CollectionAssert.IsSubsetOf(expected, all);
+        Assert.IsFalse(all.Any(h => h.StartsWith("/dav/secret/")));
+
+        // The server root stays finite.
+        (status, body, _) = await SendAsync(c, "PROPFIND", "/", null, ("Depth", "infinity"));
+        Assert.AreEqual(HttpStatusCode.Forbidden, status);
+        StringAssert.Contains(body, "propfind-finite-depth");
+    }
+
+    [TestMethod]
+    [DoNotParallelize] // changes server-wide settings other PROPFIND tests depend on
+    public async Task PropfindDepthInfinityIsLimited()
+    {
+        var c = await Alice();
+        var top = Unique("big");
+        await SendAsync(c, "MKCOL", $"/dav/home/{top}/");
+        for (var i = 0; i < 5; i++) await SendAsync(c, "PUT", $"/dav/home/{top}/f{i}.txt", "x");
+        var store = (await GetAsync()).Services.GetRequiredService<ConfigStore>();
+        try
+        {
+            await store.UpdateAsync(cfg => cfg.Settings.MaxDepthInfinityItems = 3);
+            var (status, body, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/", null, ("Depth", "infinity"));
+            Assert.AreEqual(HttpStatusCode.Forbidden, status, "too many entries: the client should fall back to Depth: 1");
+            StringAssert.Contains(body, "propfind-finite-depth");
+            (status, _, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/", null, ("Depth", "1"));
+            Assert.AreEqual(HttpStatusCode.MultiStatus, status);
+
+            await store.UpdateAsync(cfg => { cfg.Settings.MaxDepthInfinityItems = 20_000; cfg.Settings.AllowDepthInfinity = false; });
+            (status, body, _) = await SendAsync(c, "PROPFIND", $"/dav/home/{top}/", null, ("Depth", "infinity"));
+            Assert.AreEqual(HttpStatusCode.Forbidden, status);
+            StringAssert.Contains(body, "propfind-finite-depth");
+        }
+        finally
+        {
+            await store.UpdateAsync(cfg => { cfg.Settings.MaxDepthInfinityItems = 20_000; cfg.Settings.AllowDepthInfinity = true; });
+        }
     }
 
     [TestMethod]
