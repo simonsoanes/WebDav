@@ -65,11 +65,14 @@ public sealed class DavTests
     public async Task PutGetHeadAndConditionalRequests()
     {
         var c = await Alice();
-        var name = Unique("hello.txt");
+        // Its own folder: other tests upload to the home folder at the same time, and leave temp files there while they do.
+        var dir = Unique("cond");
+        Assert.AreEqual(HttpStatusCode.Created, (await SendAsync(c, "MKCOL", $"/dav/home/{dir}/")).Status);
+        var name = dir + "/hello.txt";
         var (put, _, putResp) = await SendAsync(c, "PUT", $"/dav/home/{name}", "Hello, world");
         Assert.AreEqual(HttpStatusCode.Created, put);
         var etag = putResp.Headers.ETag!.Tag;
-        Assert.IsTrue(File.Exists(Path.Combine(FilesDir, "home", "alice", name)), "home/{user} resolves per user");
+        Assert.IsTrue(File.Exists(Path.Combine(FilesDir, "home", "alice", dir, "hello.txt")), "home/{user} resolves per user");
 
         var (get, body, getResp) = await SendAsync(c, "GET", $"/dav/home/{name}");
         Assert.AreEqual(HttpStatusCode.OK, get);
@@ -97,7 +100,7 @@ public sealed class DavTests
         var (createOnly, _, _) = await SendAsync(c, "PUT", $"/dav/home/{name}", "again", ("If-None-Match", "*"));
         Assert.AreEqual(HttpStatusCode.PreconditionFailed, createOnly);
 
-        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(FilesDir, "home", "alice"), ".nullify-upload-*").Length, "no temp files left behind");
+        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(FilesDir, "home", "alice", dir), ".nullify-upload-*").Length, "no temp files left behind");
     }
 
     [TestMethod]

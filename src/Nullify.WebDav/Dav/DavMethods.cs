@@ -58,68 +58,58 @@ public sealed partial class DavHandler
             return;
         }
 
-        long start = 0, length = file.Length;
-        var range = ParseRange(Request.Headers.Range.ToString(), file.Length);
-        if (range != null && IfRangeAllows(headers, etag, lastModified))
-        {
-            if (range.Value.Start < 0)
-            {
-                Response.Headers.ContentRange = $"bytes */{file.Length}";
-                throw new DavException(StatusCodes.Status416RangeNotSatisfiable);
-            }
-            (start, length) = range.Value;
-            Response.StatusCode = StatusCodes.Status206PartialContent;
-            Response.Headers.ContentRange = $"bytes {start}-{start + length - 1}/{file.Length}";
-        }
-        else
-        {
-            Response.StatusCode = StatusCodes.Status200OK;
-        }
+        var contentType = ContentTypeFor(file.Name);
+        var ranges = IfRangeAllows(headers, etag, lastModified) ? ByteRanges.Parse(Request.Headers.Range.ToString(), file.Length) : ByteRanges.RangeSet.None;
+        if (ranges.Unsatisfiable)
+            throw new DavException(StatusCodes.Status416RangeNotSatisfiable) { ContentRange = $"bytes */{file.Length}" };
 
-        Response.ContentType = ContentTypeFor(file.Name);
-        Response.ContentLength = length;
-        if (head) return;
-
-        await using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+        await using var stream = head ? null : new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
             81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        stream.Seek(start, SeekOrigin.Begin);
+
+        if (ranges.Ignore || ranges.Ranges.Count == 1)
+        {
+            var whole = new ByteRanges.ByteRange(0, file.Length);
+            var range = ranges.Ignore ? whole : ranges.Ranges[0];
+            if (ranges.Ignore) Response.StatusCode = StatusCodes.Status200OK;
+            else
+            {
+                Response.StatusCode = StatusCodes.Status206PartialContent;
+                Response.Headers.ContentRange = ByteRanges.ContentRange(range, file.Length);
+            }
+            Response.ContentType = contentType;
+            Response.ContentLength = range.Length;
+            if (stream != null) await CopyRangeAsync(stream, range);
+            return;
+        }
+
+        // Several ranges: one multipart/byteranges body (RFC 2616 section 19.2), each part with its own Content-Range.
+        var boundary = ByteRanges.NewBoundary();
+        Response.StatusCode = StatusCodes.Status206PartialContent;
+        Response.ContentType = "multipart/byteranges; boundary=" + boundary;
+        Response.ContentLength = ByteRanges.MultipartLength(boundary, contentType, ranges.Ranges, file.Length);
+        if (stream == null) return;
+        foreach (var range in ranges.Ranges)
+        {
+            await Response.Body.WriteAsync(ByteRanges.PartHeader(boundary, contentType, range, file.Length), Ct);
+            await CopyRangeAsync(stream, range);
+            await Response.Body.WriteAsync(ByteRanges.CrLf, Ct);
+        }
+        await Response.Body.WriteAsync(ByteRanges.Closing(boundary), Ct);
+    }
+
+    private async Task CopyRangeAsync(FileStream stream, ByteRanges.ByteRange range)
+    {
+        stream.Seek(range.Start, SeekOrigin.Begin);
         var buffer = new byte[81920];
-        var remaining = length;
+        var remaining = range.Length;
         while (remaining > 0)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), Ct);
-            if (read == 0) break;
+            // The file shrank while it was being sent: the response cannot be completed truthfully.
+            if (read == 0) throw new IOException("The file changed while it was being read.");
             await Response.Body.WriteAsync(buffer.AsMemory(0, read), Ct);
             remaining -= read;
         }
-    }
-
-    /// <summary>Single byte range only; multiple ranges get the whole file. Start = -1 means unsatisfiable.</summary>
-    private static (long Start, long Length)? ParseRange(string header, long size)
-    {
-        if (!header.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase)) return null;
-        var spec = header[6..].Trim();
-        if (spec.Contains(',')) return null;
-        var dash = spec.IndexOf('-');
-        if (dash < 0) return null;
-        var first = spec[..dash].Trim();
-        var last = spec[(dash + 1)..].Trim();
-        if (first.Length == 0)
-        {
-            if (!long.TryParse(last, NumberStyles.None, CultureInfo.InvariantCulture, out var suffix)) return null;
-            if (suffix == 0 || size == 0) return (-1, 0);
-            suffix = Math.Min(suffix, size);
-            return (size - suffix, suffix);
-        }
-        if (!long.TryParse(first, NumberStyles.None, CultureInfo.InvariantCulture, out var start)) return null;
-        long end = size - 1;
-        if (last.Length > 0)
-        {
-            if (!long.TryParse(last, NumberStyles.None, CultureInfo.InvariantCulture, out end) || end < start) return null;
-            end = Math.Min(end, size - 1);
-        }
-        if (start >= size) return (-1, 0);
-        return (start, end - start + 1);
     }
 
     private static bool IfRangeAllows(RequestHeaders headers, string etag, DateTimeOffset lastModified)
@@ -137,7 +127,15 @@ public sealed partial class DavHandler
         RequireWrite(t);
         if (t.IsMountRoot || Directory.Exists(t.Physical)) throw new DavException(StatusCodes.Status405MethodNotAllowed, message: "A folder cannot be overwritten with a file.");
         if (!Directory.Exists(t.Parent)) throw new DavException(StatusCodes.Status409Conflict, message: "The parent folder does not exist.");
-        if (Request.Headers.ContentRange.Count > 0) throw new DavException(StatusCodes.Status400BadRequest, message: "Partial uploads (Content-Range) are not supported.");
+        // RFC 2616 9.6: a server must not ignore Content-Range on PUT; it is honoured as a partial update.
+        ByteRanges.PutRange? partial = null;
+        if (Request.Headers.ContentRange.Count > 0)
+        {
+            partial = ByteRanges.ParseContentRange(Request.Headers.ContentRange.ToString())
+                      ?? throw new DavException(StatusCodes.Status400BadRequest, message: "Content-Range must be \"bytes first-last/length\" or \"bytes first-last/*\".");
+            if (Request.ContentLength is { } bodyLength && bodyLength != partial.Value.Length)
+                throw new DavException(StatusCodes.Status400BadRequest, message: "The body length does not match the Content-Range.");
+        }
 
         var exists = File.Exists(t.Physical);
         var headers = Request.GetTypedHeaders();
@@ -156,6 +154,22 @@ public sealed partial class DavHandler
 
         if (_http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } bodyLimit) bodyLimit.MaxRequestBodySize = null;
 
+        if (partial is { } part) await WritePartialAsync(t, exists, part, limit);
+        else await WriteWholeAsync(t, limit);
+
+        // ownCloud/Nextcloud convention used by rclone and sync clients to preserve modification times.
+        if (long.TryParse(Request.Headers["X-OC-Mtime"], out var mtime) && mtime is > 0 and < 253402300800)
+        {
+            File.SetLastWriteTimeUtc(t.Physical, DateTimeOffset.FromUnixTimeSeconds(mtime).UtcDateTime);
+            Response.Headers["X-OC-Mtime"] = "accepted";
+        }
+        Response.Headers.ETag = ETag(new FileInfo(t.Physical));
+        Response.StatusCode = exists ? StatusCodes.Status204NoContent : StatusCodes.Status201Created;
+    }
+
+    /// <summary>A whole new body: written to a temporary file that replaces the target only when complete.</summary>
+    private async Task WriteWholeAsync(DavTarget t, long limit)
+    {
         var temp = Path.Combine(t.Parent, PathSafety.TempPrefix + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
@@ -178,15 +192,49 @@ public sealed partial class DavHandler
             TryDelete(temp);
             throw;
         }
+    }
 
-        // ownCloud/Nextcloud convention used by rclone and sync clients to preserve modification times.
-        if (long.TryParse(Request.Headers["X-OC-Mtime"], out var mtime) && mtime is > 0 and < 253402300800)
+    /// <summary>
+    /// A partial PUT ("Content-Range: bytes first-last/length"): the body replaces those bytes of the file in place,
+    /// which lets clients resume an interrupted upload or patch part of a large file. The range may start anywhere up
+    /// to the current end of the file (or 0 for a new one), never beyond it, so no request can leave a hole or make a
+    /// file grow by more than it sends; otherwise 416 tells the client how long the file is now. A complete length,
+    /// when given, also cuts a longer file down to it. Use If-Match to make sure the file is the one you expect.
+    /// </summary>
+    private async Task WritePartialAsync(DavTarget t, bool exists, ByteRanges.PutRange range, long limit)
+    {
+        var current = exists ? new FileInfo(t.Physical).Length : 0;
+        if (range.Start > current)
+            throw new DavException(StatusCodes.Status416RangeNotSatisfiable, message: $"The file is {current} bytes long; a partial upload cannot start beyond its end.")
+                { ContentRange = $"bytes */{current}" };
+        var grown = Math.Max(current, range.End + 1);
+        var final = range.CompleteLength is { } complete && complete < grown ? complete : grown;
+        if (final > limit) throw new DavException(StatusCodes.Status413PayloadTooLarge, message: "The file would be larger than the upload limit.");
+        if (final > current && FreeSpace(t.Parent) is { } free && final - current > free) throw new DavException(StatusCodes.Status507InsufficientStorage);
+
+        await using var output = new FileStream(t.Physical, exists ? FileMode.Open : FileMode.CreateNew, FileAccess.Write, FileShare.Read, 81920, FileOptions.Asynchronous);
+        try
         {
-            File.SetLastWriteTimeUtc(t.Physical, DateTimeOffset.FromUnixTimeSeconds(mtime).UtcDateTime);
-            Response.Headers["X-OC-Mtime"] = "accepted";
+            output.Seek(range.Start, SeekOrigin.Begin);
+            var buffer = new byte[81920];
+            long written = 0;
+            int read;
+            while ((read = await Request.Body.ReadAsync(buffer, Ct)) > 0)
+            {
+                if (written + read > range.Length) throw new DavException(StatusCodes.Status400BadRequest, message: "The body is longer than the Content-Range.");
+                await output.WriteAsync(buffer.AsMemory(0, read), Ct);
+                written += read;
+            }
+            if (written != range.Length) throw new DavException(StatusCodes.Status400BadRequest, message: "The body is shorter than the Content-Range.");
+            if (output.Length > final) output.SetLength(final);
         }
-        Response.Headers.ETag = ETag(new FileInfo(t.Physical));
-        Response.StatusCode = exists ? StatusCodes.Status204NoContent : StatusCodes.Status201Created;
+        catch when (!exists)
+        {
+            // A failed first part leaves nothing behind.
+            await output.DisposeAsync();
+            TryDelete(t.Physical);
+            throw;
+        }
     }
 
     private static void TryDelete(string path)

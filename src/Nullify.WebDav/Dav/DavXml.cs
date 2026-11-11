@@ -27,6 +27,9 @@ public sealed class DavException(int status, XName? precondition = null, string?
     public int Status { get; } = status;
     public XName? Precondition { get; } = precondition;
     public XElement? Detail { get; } = detail;
+
+    /// <summary>"bytes */length" on a 416, which the error response keeps (RFC 2616 14.16).</summary>
+    public string? ContentRange { get; init; }
 }
 
 public static class DavXml

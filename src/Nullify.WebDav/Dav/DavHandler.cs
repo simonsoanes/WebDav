@@ -139,6 +139,7 @@ public sealed partial class DavHandler
         {
             http.Response.Clear();
             http.Response.Headers["DAV"] = DavCapabilities;
+            if (dav.ContentRange != null) http.Response.Headers.ContentRange = dav.ContentRange;
             if (dav.Precondition != null)
             {
                 await DavXml.WriteAsync(http.Response, dav.Status, DavXml.Error(dav.Precondition, dav.Detail), http.RequestAborted);
