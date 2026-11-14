@@ -1,6 +1,6 @@
 # Nullify.WebDav
 
-A self-hosted, multi-user **WebDAV file server** built on .NET 10 with no third-party (non-Microsoft) dependencies, a focus on security and a single configuration file. It maps **users and groups** to **paths** on one or more **storage services**, gives each user a **default folder**, and can verify passwords against the **operating system** (Windows or Linux), an **LDAP directory** or an **IMAP server**, offer **single sign-on with OpenID Connect** — and on Windows access files **as the signed-in user**, so NTFS and share permissions apply.
+A self-hosted, multi-user **WebDAV file server** built on .NET 11 with no third-party (non-Microsoft) dependencies, a focus on security and a single configuration file. It maps **users and groups** to **paths** on one or more **storage services**, gives each user a **default folder**, and can verify passwords against the **operating system** (Windows or Linux), an **LDAP directory** or an **IMAP server**, offer **single sign-on with OpenID Connect** — and on Windows access files **as the signed-in user**, so NTFS and share permissions apply.
 
 - **WebDAV class 1 and 2** (RFC 4918): `PROPFIND`, `PROPPATCH`, `GET`/`HEAD` with ranges and conditional requests, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE`, `LOCK`/`UNLOCK` with a complete `If` header implementation
 - Works with **Windows Explorer** (mapped drives, Win32 properties, Office locking), **macOS Finder**, **GNOME/KDE**, **davfs2**, **rclone**, **Cyberduck**, **WinSCP** and mobile file managers

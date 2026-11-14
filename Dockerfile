@@ -3,7 +3,7 @@
 #   docker build -t nullify-webdav .
 # CI gate: `docker build --target test .` runs the test suite inside the SDK image.
 
-ARG DOTNET_VERSION=10.0
+ARG DOTNET_VERSION=11.0
 
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 ARG VERSION=0.0.0
